@@ -346,6 +346,165 @@ export class DatabaseService {
     }
   }
 
+  // Ensure database exists (connect to postgres, create if needed)
+  static async ensureDatabaseExists(connectionString: string): Promise<void> {
+    // Parse connection string to get database name
+    const url = new URL(connectionString);
+    const dbName = url.pathname.slice(1); // Remove leading /
+
+    if (!dbName || dbName === 'postgres') {
+      console.log('[Database] Using default postgres database, skipping creation');
+      return;
+    }
+
+    // Connect to postgres database to check/create target db
+    url.pathname = '/postgres';
+    const adminPool = new Pool({
+      connectionString: url.toString(),
+      max: 1,
+    });
+
+    try {
+      // Check if database exists
+      const checkResult = await adminPool.query(
+        'SELECT 1 FROM pg_database WHERE datname = $1',
+        [dbName]
+      );
+
+      if (checkResult.rows.length === 0) {
+        console.log(`[Database] Creating database "${dbName}"...`);
+        // Use raw query - can't use parameterized query for CREATE DATABASE
+        await adminPool.query(`CREATE DATABASE "${dbName}"`);
+        console.log(`[Database] ✓ Database "${dbName}" created`);
+      } else {
+        console.log(`[Database] ✓ Database "${dbName}" already exists`);
+      }
+    } finally {
+      await adminPool.end();
+    }
+  }
+
+  // Run migrations - creates tables if they don't exist
+  async runMigrations(): Promise<void> {
+    console.log('[Database] Running migrations...');
+
+    // 001_expenses.sql
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS expenses (
+        id SERIAL PRIMARY KEY,
+        title VARCHAR(100) NOT NULL,
+        data DATE NOT NULL,
+        kwota DECIMAL(10,2) NOT NULL,
+        waluta VARCHAR(10) DEFAULT 'PLN',
+        kategoria VARCHAR(50) NOT NULL,
+        sprzedawca VARCHAR(255),
+        user_name VARCHAR(50) NOT NULL,
+        opis TEXT,
+        zrodlo VARCHAR(20) DEFAULT 'telegram',
+        raw_input TEXT,
+        status VARCHAR(20) DEFAULT 'active',
+        hash VARCHAR(255),
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_expenses_data ON expenses(data)');
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_expenses_kategoria ON expenses(kategoria)');
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_expenses_user ON expenses(user_name)');
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_expenses_hash ON expenses(hash)');
+    console.log('[Database] ✓ expenses table ready');
+
+    // 002_audit_log.sql
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS audit_log (
+        id SERIAL PRIMARY KEY,
+        timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        akcja VARCHAR(50) NOT NULL,
+        szczegoly JSONB,
+        user_id VARCHAR(50),
+        expense_id VARCHAR(50)
+      )
+    `);
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp)');
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_audit_akcja ON audit_log(akcja)');
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id)');
+    console.log('[Database] ✓ audit_log table ready');
+
+    // 003_idempotency.sql
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS idempotency (
+        id SERIAL PRIMARY KEY,
+        message_id VARCHAR(50) NOT NULL,
+        chat_id VARCHAR(50) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT unique_message_chat UNIQUE (message_id, chat_id)
+      )
+    `);
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_idempotency_created ON idempotency(created_at)');
+    console.log('[Database] ✓ idempotency table ready');
+
+    // 004_merchants.sql
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS merchants (
+        id SERIAL PRIMARY KEY,
+        skrot VARCHAR(100) NOT NULL UNIQUE,
+        pelna_nazwa VARCHAR(255) NOT NULL,
+        domyslna_kategoria VARCHAR(50) NOT NULL,
+        learned_from VARCHAR(50) DEFAULT 'preset',
+        correction_count INTEGER DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_merchants_skrot ON merchants(skrot)');
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_merchants_kategoria ON merchants(domyslna_kategoria)');
+
+    // Seed preset merchants
+    await this.pool.query(`
+      INSERT INTO merchants (skrot, pelna_nazwa, domyslna_kategoria, learned_from) VALUES
+        ('biedra', 'Biedronka', 'Zakupy spozywcze', 'preset'),
+        ('biedronka', 'Biedronka', 'Zakupy spozywcze', 'preset'),
+        ('lidl', 'Lidl', 'Zakupy spozywcze', 'preset'),
+        ('zabka', 'Zabka', 'Zakupy spozywcze', 'preset'),
+        ('zara', 'Zara', 'Ubrania', 'preset'),
+        ('orlen', 'Orlen', 'Paliwo', 'preset'),
+        ('bp', 'BP', 'Paliwo', 'preset'),
+        ('shell', 'Shell', 'Paliwo', 'preset'),
+        ('spotify', 'Spotify', 'Subskrypcje', 'preset'),
+        ('netflix', 'Netflix', 'Subskrypcje', 'preset'),
+        ('hbo', 'HBO Max', 'Subskrypcje', 'preset'),
+        ('uber', 'Uber', 'Transport', 'preset'),
+        ('bolt', 'Bolt', 'Transport', 'preset'),
+        ('allegro', 'Allegro', 'Zakupy spozywcze', 'preset'),
+        ('amazon', 'Amazon', 'Zakupy spozywcze', 'preset'),
+        ('rossmann', 'Rossmann', 'Uroda', 'preset'),
+        ('hebe', 'Hebe', 'Uroda', 'preset'),
+        ('apteka', 'Apteka', 'Zdrowie', 'preset'),
+        ('mcdonalds', 'McDonalds', 'Restauracje', 'preset'),
+        ('kfc', 'KFC', 'Restauracje', 'preset'),
+        ('starbucks', 'Starbucks', 'Kawiarnie', 'preset'),
+        ('costa', 'Costa Coffee', 'Kawiarnie', 'preset'),
+        ('ikea', 'IKEA', 'Dom', 'preset'),
+        ('leroy', 'Leroy Merlin', 'Dom', 'preset'),
+        ('castorama', 'Castorama', 'Dom', 'preset'),
+        ('media', 'Media Expert', 'Elektronika', 'preset'),
+        ('rtv', 'RTV Euro AGD', 'Elektronika', 'preset'),
+        ('decathlon', 'Decathlon', 'Sport', 'preset'),
+        ('empik', 'Empik', 'Rozrywka', 'preset'),
+        ('cinema', 'Cinema City', 'Rozrywka', 'preset'),
+        ('multikino', 'Multikino', 'Rozrywka', 'preset'),
+        ('xtb', 'XTB', 'Inwestycje', 'preset'),
+        ('revolut', 'Revolut', 'Przelewy', 'preset'),
+        ('pyszne', 'Pyszne.pl', 'Delivery', 'preset'),
+        ('glovo', 'Glovo', 'Delivery', 'preset'),
+        ('wolt', 'Wolt', 'Delivery', 'preset'),
+        ('ubereats', 'Uber Eats', 'Delivery', 'preset')
+      ON CONFLICT (skrot) DO NOTHING
+    `);
+    console.log('[Database] ✓ merchants table ready');
+
+    console.log('[Database] All migrations completed successfully!');
+  }
+
   // Execute raw SQL query (for NLP queries)
   async executeRawQuery(sql: string, values: (string | number)[]): Promise<Expense[]> {
     const result = await this.pool.query(sql, values);

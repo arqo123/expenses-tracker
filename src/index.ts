@@ -1,12 +1,19 @@
 import { createApp } from './app.ts';
-import { getEnv } from './config/env.ts';
+import { getEnv, getDatabaseUrl } from './config/env.ts';
+import { DatabaseService } from './services/database.service.ts';
 import { Cron } from 'croner';
 
 // Load environment
 const env = getEnv();
 
+// Ensure database exists before starting
+await DatabaseService.ensureDatabaseExists(getDatabaseUrl());
+
 // Create app
 const { app, database } = createApp();
+
+// Run migrations on startup
+await database.runMigrations();
 
 // Scheduled jobs
 const idempotencyCleanup = new Cron('*/5 * * * *', async () => {
