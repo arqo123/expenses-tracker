@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: expense-tracker-db
+    environment:
+      POSTGRES_DB: expense_tracker
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+    ports:
+      - "5434:5432"
+    volumes:
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d expense_tracker"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    container_name: expense-tracker-api
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - PORT=3000
+      - DATABASE_URL=postgres://test:test@db:5432/expense_tracker
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-mock}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-mock}
+      - GROQ_API_KEY=${GROQ_API_KEY:-mock}
+      - ALLOWED_CHAT_IDS=6363464900,5983454226
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./src:/app/src:ro
+
+volumes:
+  postgres_data:
