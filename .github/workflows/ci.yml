@@ -1,0 +1,49 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile || bun install
+
+      - name: Run tests
+        run: bun test
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t expense-tracker-api:${{ github.sha }} .
+
+      - name: Test Docker container health
+        run: |
+          docker run -d --name test-container -p 3000:3000 \
+            -e NODE_ENV=test \
+            -e TELEGRAM_BOT_TOKEN=test \
+            -e ALLOWED_CHAT_IDS=123 \
+            -e POSTGRES_HOST=localhost \
+            -e POSTGRES_PORT=5432 \
+            -e POSTGRES_DATABASE=test \
+            -e POSTGRES_USER=test \
+            -e POSTGRES_PASSWORD=test \
+            expense-tracker-api:${{ github.sha }}
+          sleep 10
+          curl -f http://localhost:3000/health || (docker logs test-container && exit 1)
+          docker stop test-container
