@@ -9,6 +9,7 @@
     "test": "bun test",
     "db:up": "docker-compose up -d db",
     "db:down": "docker-compose down",
+    "db:clean": "bun run scripts/db-clean.ts",
     "docker:build": "docker-compose build",
     "docker:up": "docker-compose up -d",
     "docker:logs": "docker-compose logs -f",
