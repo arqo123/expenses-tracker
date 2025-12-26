@@ -101,9 +101,16 @@ export async function callbackHandler(
             );
           }
 
+          // Save learning for future categorization
+          await database.saveProductLearning(
+            updated.opis,
+            category as ExpenseCategory,
+            updated.sprzedawca
+          );
+
           await database.createAuditLog(
             'category_correction',
-            { new_category: category },
+            { new_category: category, learning_saved: true },
             userName,
             expenseId
           );
@@ -111,6 +118,68 @@ export async function callbackHandler(
           await telegram.answerCallbackQuery(callbackQuery.id, 'Blad zmiany kategorii');
         }
 
+        return c.json({ ok: true });
+      }
+
+      case 'ocr_list': {
+        // List expenses from OCR for editing: "ocr_list:{count}"
+        const count = parseInt(param, 10) || 10;
+
+        // Fetch recent telegram_image expenses for this user
+        const expenses = await database.getRecentExpensesBySource(
+          userName,
+          'telegram_image',
+          count
+        );
+
+        if (expenses.length === 0) {
+          await telegram.answerCallbackQuery(callbackQuery.id, 'Nie znaleziono wydatkow');
+          return c.json({ ok: true });
+        }
+
+        const keyboard = expenses.map(e => [{
+          text: `${CATEGORY_EMOJI[e.kategoria] || '❓'} ${e.opis.slice(0, 25)} → zmień`,
+          callback_data: `ocr_edit:${e.id}`
+        }]);
+
+        keyboard.push([{ text: '✅ Gotowe', callback_data: 'delete:cancel' }]);
+
+        if (chatId && messageId) {
+          await telegram.editMessage(
+            chatId,
+            messageId,
+            'Wybierz produkt do edycji kategorii:',
+            undefined,
+            { inline_keyboard: keyboard }
+          );
+        }
+
+        await telegram.answerCallbackQuery(callbackQuery.id);
+        return c.json({ ok: true });
+      }
+
+      case 'ocr_edit': {
+        // Show category selection for specific expense: "ocr_edit:exp_xxx"
+        const expenseId = param;
+
+        const expense = await database.getExpenseById(expenseId);
+        if (!expense) {
+          await telegram.answerCallbackQuery(callbackQuery.id, 'Nie znaleziono wydatku');
+          return c.json({ ok: true });
+        }
+
+        const keyboard = buildCategoryKeyboard(expenseId);
+
+        if (chatId) {
+          await telegram.sendMessage({
+            chat_id: chatId,
+            text: `Wybierz kategorie dla: *${expense.opis}*`,
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+          });
+        }
+
+        await telegram.answerCallbackQuery(callbackQuery.id);
         return c.json({ ok: true });
       }
 

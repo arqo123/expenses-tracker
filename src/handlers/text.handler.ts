@@ -13,22 +13,24 @@ export async function textHandler(c: Context, message: TelegramMessage): Promise
   const userName = getUserName(chatId, message.from.first_name);
 
   try {
-    // First try simple parsing
+    // Try simple parsing (optional - AI will do the heavy lifting)
     const parsed = parseExpenseText(text);
 
-    if (!parsed) {
-      await telegram.sendError(chatId, 'Nie rozumiem. Uzyj formatu: sklep kwota (np. zabka 15)');
-      return c.json({ ok: true });
-    }
-
-    // AI categorization
+    // AI categorization - always run, even if simple parser failed
     console.log(`[TextHandler] Categorizing: "${text}" for ${userName}`);
     const result = await aiCategorizer.categorizeSingle(text);
 
-    // Use AI result or fallback to parsed values
-    const shop = result.shop || parsed.shop;
-    const amount = result.amount || parsed.amount;
+    // Use AI result or fallback to parsed values (if available)
+    const shop = result.shop || parsed?.shop || 'Nieznany';
+    const amount = result.amount || parsed?.amount;
     const category = result.category || 'Inne';
+    const description = result.description || parsed?.description;
+
+    // Validate we have an amount
+    if (!amount || amount <= 0) {
+      await telegram.sendError(chatId, 'Nie rozpoznałem kwoty. Podaj kwotę (np. "zabka 15" lub "kawa 6,50 zł")');
+      return c.json({ ok: true });
+    }
 
     // Create expense
     const expense = await database.createExpense({
@@ -38,7 +40,7 @@ export async function textHandler(c: Context, message: TelegramMessage): Promise
       user: userName,
       source: 'telegram_text',
       raw_input: text,
-      description: parsed.description,
+      description,
     });
 
     // Send confirmation
