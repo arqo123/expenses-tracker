@@ -11,8 +11,9 @@ export function parseExpenseText(text: string): ParsedExpense | null {
   if (!trimmed) return null;
 
   // Try to extract amount from the end
-  // Pattern: "shop 15" or "shop 15.50" or "shop 15,50"
-  const amountMatch = trimmed.match(/(\d+(?:[.,]\d{1,2})?)\s*(?:zl|pln)?\s*$/i);
+  // Pattern: "shop 15" or "shop 15.50" or "shop 15,50" or "shop 15 gr."
+  // Note: "gr" is treated as PLN (user convention, not actual grosze)
+  const amountMatch = trimmed.match(/(\d+(?:[.,]\d{1,2})?)\s*(?:zl|pln|gr\.?|zlotych|zloty)?\s*$/i);
 
   if (!amountMatch) {
     return null;
