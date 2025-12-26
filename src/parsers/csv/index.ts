@@ -25,6 +25,10 @@ export function detectBankFormat(content: string): string {
   if (firstLine.includes('completed date') && firstLine.includes('description')) {
     return 'revolut';
   }
+  // Revolut Polish format
+  if (firstLine.includes('rodzaj') && firstLine.includes('data zrealizowania') && firstLine.includes('kwota')) {
+    return 'revolut-pl';
+  }
   if (firstLine.includes('data waluty') && firstLine.includes('nr rachunku')) {
     return 'ing';
   }
@@ -48,6 +52,8 @@ export function parseCSV(content: string): CSVParseResult {
       return parseMBank(content);
     case 'revolut':
       return parseRevolut(content);
+    case 'revolut-pl':
+      return parseRevolutPL(content);
     case 'zen':
       return parseZen(content);
     default:
@@ -211,6 +217,70 @@ function parseRevolut(content: string): CSVParseResult {
   }
 
   return { bank: 'revolut', transactions, errors };
+}
+
+// Revolut Polish format
+function parseRevolutPL(content: string): CSVParseResult {
+  const lines = content.split('\n');
+  const transactions: ParsedTransaction[] = [];
+  const errors: string[] = [];
+
+  // Allowed transaction types
+  const allowedTypes = ['płatność kartą', 'bankomat', 'opłata'];
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i]?.trim();
+    if (!line) continue;
+
+    try {
+      const cols = parseCSVLine(line);
+
+      // Revolut PL format:
+      // 0: Rodzaj (Type)
+      // 1: Produkt (Product)
+      // 2: Data rozpoczęcia (Start date)
+      // 3: Data zrealizowania (Completed date)
+      // 4: Opis (Description)
+      // 5: Kwota (Amount)
+      // 6: Opłata (Fee)
+      // 7: Waluta (Currency)
+      // 8: State
+      // 9: Saldo (Balance)
+
+      const transactionType = (cols[0] || '').toLowerCase();
+      const completedDate = cols[3] || '';
+      const description = cols[4] || '';
+      const amountStr = cols[5] || '';
+      const state = cols[8] || '';
+
+      // Skip if not completed
+      if (state.toUpperCase() !== 'ZAKOŃCZONO') continue;
+
+      // Skip if not an allowed transaction type
+      if (!allowedTypes.includes(transactionType)) continue;
+
+      const amount = Math.abs(parseAmount(amountStr));
+      if (amount === 0) continue;
+
+      // Extract date (format: YYYY-MM-DD HH:MM:SS -> YYYY-MM-DD)
+      const dateStr = completedDate.split(' ')[0] || '';
+      if (!dateStr) continue;
+
+      const merchant = extractMerchant(description);
+
+      transactions.push({
+        date: dateStr,
+        merchant,
+        amount,
+        description,
+        rawLine: line,
+      });
+    } catch (e) {
+      errors.push(`Line ${i + 1}: ${e}`);
+    }
+  }
+
+  return { bank: 'revolut-pl', transactions, errors };
 }
 
 // ZEN Bank format

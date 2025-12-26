@@ -2,7 +2,9 @@ import type { Context } from 'hono';
 import type { TelegramMessage } from '../types/telegram.types.ts';
 import { getUserName } from './webhook.handler.ts';
 import { textHandler } from './text.handler.ts';
-import { queryHandler } from './query.handler.ts';
+import { nlpQueryHandler } from './nlp-query.handler.ts';
+import { correctionHandler } from './correction.handler.ts';
+import { isQuery, isCorrection } from '../parsers/text.parser.ts';
 
 const MAX_VOICE_DURATION = 60; // seconds
 const MAX_VOICE_SIZE = 1024 * 1024; // 1 MB
@@ -44,8 +46,12 @@ export async function voiceHandler(c: Context, message: TelegramMessage): Promis
     const normalizedText = whisper.normalizePolishText(transcription);
     console.log(`[VoiceHandler] Transcription: "${transcription}" -> "${normalizedText}"`);
 
-    // Detect intent
-    const intent = whisper.detectIntent(normalizedText);
+    // Show transcription to user
+    await telegram.sendMessage({
+      chat_id: chatId,
+      text: `🎤 _${normalizedText}_`,
+      parse_mode: 'Markdown',
+    });
 
     // Create a modified message with the transcribed text
     const textMessage: TelegramMessage = {
@@ -54,9 +60,13 @@ export async function voiceHandler(c: Context, message: TelegramMessage): Promis
       voice: undefined,
     };
 
-    // Route based on intent
-    if (intent === 'query') {
-      return queryHandler(c, textMessage);
+    // Route based on intent (using same logic as text messages)
+    if (isQuery(normalizedText)) {
+      return nlpQueryHandler(c, textMessage);
+    }
+
+    if (isCorrection(normalizedText)) {
+      return correctionHandler(c, textMessage);
     }
 
     // Default: treat as expense

@@ -24,10 +24,19 @@ export async function webhookHandler(c: Context): Promise<Response> {
   const update: TelegramUpdate = await c.req.json();
   const telegram = c.get('telegram');
   const database = c.get('database');
+  const env = c.get('env');
 
   try {
     // Handle callback queries (inline button clicks)
     if (update.callback_query) {
+      // Check allowed chat IDs (skip in development mode)
+      if (env.NODE_ENV !== 'development' && env.ALLOWED_CHAT_IDS.length > 0) {
+        const callbackChatId = update.callback_query.message?.chat?.id?.toString();
+        if (callbackChatId && !env.ALLOWED_CHAT_IDS.includes(callbackChatId)) {
+          console.log(`[Webhook] Unauthorized callback from chat ${callbackChatId}`);
+          return c.json({ ok: true });
+        }
+      }
       return callbackHandler(c, update.callback_query);
     }
 
@@ -37,6 +46,14 @@ export async function webhookHandler(c: Context): Promise<Response> {
     }
 
     const chatId = message.chat.id;
+
+    // Check allowed chat IDs (skip in development mode)
+    if (env.NODE_ENV !== 'development' && env.ALLOWED_CHAT_IDS.length > 0) {
+      if (!env.ALLOWED_CHAT_IDS.includes(chatId.toString())) {
+        console.log(`[Webhook] Unauthorized message from chat ${chatId}`);
+        return c.json({ ok: true });
+      }
+    }
     const messageId = message.message_id.toString();
 
     // Idempotency check

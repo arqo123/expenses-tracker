@@ -14,6 +14,7 @@ const envSchema = z.object({
 
   // Telegram
   TELEGRAM_BOT_TOKEN: z.string(),
+  TELEGRAM_BOT_TOKEN_DEV: z.string().optional(),
   ALLOWED_CHAT_IDS: z.string().default('').transform(s => s.split(',').filter(Boolean)),
 
   // AI APIs

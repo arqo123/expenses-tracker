@@ -129,6 +129,17 @@ export async function csvHandler(c: Context, message: TelegramMessage): Promise<
 
     const { created, duplicates } = await database.createExpensesBatch(expensesToCreate);
 
+    // Aggregate categories for summary
+    const categoryBreakdown: Record<string, { count: number; amount: number }> = {};
+    for (const expense of expensesToCreate) {
+      const cat = expense.category;
+      if (!categoryBreakdown[cat]) {
+        categoryBreakdown[cat] = { count: 0, amount: 0 };
+      }
+      categoryBreakdown[cat].count++;
+      categoryBreakdown[cat].amount += expense.amount;
+    }
+
     // Delete progress message and send final summary
     try {
       await telegram.deleteMessage(chatId, progressMsgId);
@@ -136,12 +147,13 @@ export async function csvHandler(c: Context, message: TelegramMessage): Promise<
       // Ignore delete errors
     }
 
-    // Send summary
+    // Send summary with category breakdown
     await telegram.sendBatchSummary(
       chatId,
       created.length,
       duplicates.length,
-      parseResult.transactions.length
+      parseResult.transactions.length,
+      categoryBreakdown
     );
 
     // Audit log

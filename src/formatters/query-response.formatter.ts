@@ -87,6 +87,19 @@ function formatSumResponse(
     text += `\nSrednia: ${formatAmount(avg)}`;
   }
 
+  // Add category breakdown with emojis if available
+  if (data.items && data.items.length > 0) {
+    text += '\n';
+    data.items.slice(0, 5).forEach((item) => {
+      const emoji = getEmojiForLabel(item.label, 'category');
+      const pct = item.percentage ? ` (${item.percentage.toFixed(0)}%)` : '';
+      text += `\n${emoji} ${item.label}: ${formatAmount(item.amount)}${pct}`;
+    });
+    if (data.items.length > 5) {
+      text += `\n_...i ${data.items.length - 5} wiecej_`;
+    }
+  }
+
   return text;
 }
 

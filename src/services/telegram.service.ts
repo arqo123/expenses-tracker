@@ -6,6 +6,11 @@ import type {
 } from '../types/telegram.types.ts';
 import { CATEGORY_EMOJI, type ExpenseCategory } from '../types/expense.types.ts';
 
+interface CategoryBreakdown {
+  count: number;
+  amount: number;
+}
+
 interface TelegramConfig {
   botToken: string;
   baseUrl?: string;
@@ -17,7 +22,11 @@ export class TelegramService {
 
   constructor(config?: Partial<TelegramConfig>) {
     const env = getEnv();
-    this.botToken = config?.botToken || env.TELEGRAM_BOT_TOKEN;
+    // Use dev token in development mode if available
+    const defaultToken = env.NODE_ENV === 'development' && env.TELEGRAM_BOT_TOKEN_DEV
+      ? env.TELEGRAM_BOT_TOKEN_DEV
+      : env.TELEGRAM_BOT_TOKEN;
+    this.botToken = config?.botToken || defaultToken;
     this.baseUrl = config?.baseUrl || 'https://api.telegram.org';
   }
 
@@ -72,12 +81,28 @@ export class TelegramService {
     chatId: number,
     created: number,
     duplicates: number,
-    total: number
+    total: number,
+    categoryBreakdown?: Record<string, CategoryBreakdown>
   ): Promise<TelegramMessage> {
-    const text = `📊 Import CSV zakonczony:
+    let text = `📊 Import CSV zakonczony:
 ✅ Utworzono: ${created}
 ⏭️ Duplikaty: ${duplicates}
 📋 Lacznie: ${total}`;
+
+    // Add category breakdown if provided
+    if (categoryBreakdown && Object.keys(categoryBreakdown).length > 0) {
+      text += '\n\n📁 Kategorie:';
+
+      // Sort by amount descending
+      const sorted = Object.entries(categoryBreakdown)
+        .sort((a, b) => b[1].amount - a[1].amount);
+
+      for (const [category, data] of sorted) {
+        const emoji = CATEGORY_EMOJI[category as ExpenseCategory] || '❓';
+        const amountStr = data.amount.toFixed(2).replace('.00', '');
+        text += `\n${emoji} ${category}: ${data.count} (${amountStr} zl)`;
+      }
+    }
 
     return this.sendMessage({
       chat_id: chatId,
