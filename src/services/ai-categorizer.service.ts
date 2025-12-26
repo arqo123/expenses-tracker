@@ -6,7 +6,31 @@ import type {
   BatchCategorizationItem,
   VisionResult,
   ExpenseCategory,
+  StoreType,
 } from '../types/expense.types.ts';
+
+// Force category based on store type for specialized stores
+function getVisionForcedCategory(storeType: StoreType | undefined, source: string): ExpenseCategory | null {
+  const sourceLower = source.toLowerCase();
+
+  // Veterinary clinics and pet stores → Zwierzeta
+  if (storeType === 'veterinary' || storeType === 'pet_store' ||
+      sourceLower.includes('weteryn') || sourceLower.includes('vet') ||
+      sourceLower.includes('zoo') || sourceLower.includes('kakadu') ||
+      sourceLower.includes('maxi zoo') || sourceLower.includes('animax') ||
+      sourceLower.includes('zooplus')) {
+    return 'Zwierzeta';
+  }
+
+  // Pharmacies → Zdrowie
+  if (storeType === 'pharmacy' ||
+      sourceLower.includes('aptek') || sourceLower.includes('pharmacy') ||
+      sourceLower.includes('doz') || sourceLower.includes('gemini')) {
+    return 'Zdrowie';
+  }
+
+  return null; // AI categorizes individually
+}
 
 interface AICategorizerConfig {
   primaryModel: string;
@@ -167,11 +191,35 @@ export class AICategorizerService {
       return `${basePrompt}
 
 === ZADANIE: Kategoryzuj POJEDYNCZY wydatek ===
-INPUT: tekst w formacie "sklep kwota" lub "sklep opis kwota"
-Przyklady: "zabka piwo 15", "uber 25", "lidl zakupy 150"
+INPUT: Tekst w dowolnym formacie polskim opisującym wydatek.
+
+WSPIERANE FORMATY (wszystkie są OK):
+- "sklep kwota" → zabka 15
+- "rzecz kwota" → guma 6.50
+- "rzecz sklep kwota" → paliwo orlen 200
+- "sklep rzecz kwota" → lidl chleb 5
+- "typ sklep kwota" → stacja paliw darex 259,40 gr
+
+JEDNOSTKI: zł, pln, gr, groszy (wszystkie = złotówki, gr != grosze)
+
+EKSTRAKCJA:
+1. Znajdź kwotę (liczba + opcjonalna jednostka)
+2. Zidentyfikuj sklep/sprzedawcę (np. "darex", "orlen", "zabka")
+3. Zidentyfikuj typ miejsca (np. "stacja paliw", "sklep", "restauracja")
+4. Zidentyfikuj produkt/rzecz (np. "guma", "paliwo", "chleb")
+5. Dopasuj kategorię na podstawie typu miejsca lub produktu
+
+WAŻNE - Rozróżniaj sklep od typu/opisu:
+- "stacja paliw darex" → shop: "Darex", description: "stacja paliw"
+- "guma zabka" → shop: "Zabka", description: "guma"
+- "paliwo orlen" → shop: "Orlen", description: "paliwo"
+
+GDY BRAK SKLEPU - użyj "Nieznany":
+- "guma do żucia 6,50" → shop: "Nieznany", description: "guma do żucia"
+- "kawa 15" → shop: "Nieznany", description: "kawa"
 
 OUTPUT (TYLKO JSON):
-{"shop": "Zabka", "category": "Zakupy spozywcze", "amount": 15.00, "confidence": 0.95}`;
+{"shop": "Darex", "category": "Paliwo", "amount": 259.40, "description": "stacja paliw", "confidence": 0.95}`;
     }
 
     if (mode === 'batch') {
@@ -191,20 +239,39 @@ OUTPUT (TYLKO JSON array):
 
 === ZADANIE: OCR paragonu lub screenshota ===
 Przeanalizuj obraz paragonu/rachunku/screenshota zamowienia.
-Wyciagnij:
-- Nazwe sklepu/restauracji (source)
-- Produkty z cenami
-- Typ obrazu: "receipt" lub "ecommerce"
+
+WYCIĄGNIJ:
+1. Nazwę sklepu/restauracji (source)
+2. Typ sklepu (store_type): grocery, veterinary, pharmacy, restaurant, electronics, clothing, home, pet_store, other
+3. Produkty z cenami I KATEGORIAMI
+4. Typ obrazu: "receipt" lub "ecommerce"
+
+KATEGORYZACJA PRODUKTÓW:
+- Dla sklepów weterynaryjnych/zoologicznych → WSZYSTKO jako "Zwierzeta"
+- Dla aptek → WSZYSTKO jako "Zdrowie"
+- Dla mieszanych sklepów (Lidl, Biedronka, Carrefour, Auchan):
+  - Żywność (chleb, masło, mleko, mięso, warzywa, owoce) → "Zakupy spozywcze"
+  - Chemia (płyn do naczyń, proszek, środki czystości, Ajax, Fairy) → "Dom"
+  - Kosmetyki (szampon, krem, pasta do zębów) → "Uroda"
+  - Karma dla zwierząt, zabawki dla zwierząt → "Zwierzeta"
+  - Leki, suplementy → "Zdrowie"
+  - Artykuły dziecięce (pieluchy, mleko dla dzieci) → "Dzieci"
+
+DOSTĘPNE KATEGORIE:
+Zakupy spozywcze, Restauracje, Delivery, Kawiarnie, Transport, Paliwo, Auto, Dom,
+Zdrowie, Uroda, Rozrywka, Sport, Hobby, Ubrania, Elektronika, Subskrypcje,
+Edukacja, Zwierzeta, Dzieci, Prezenty, Inwestycje, Przelewy, Hotele, Oplaty administracyjne, Inne
 
 OUTPUT (TYLKO JSON):
 {
   "image_type": "receipt",
-  "source": "Biedronka",
+  "source": "Lidl",
+  "store_type": "grocery",
   "products": [
-    {"name": "Chleb", "price": 3.50},
-    {"name": "Maslo", "price": 7.99}
+    {"name": "Chleb", "price": 4.50, "category": "Zakupy spozywcze"},
+    {"name": "Płyn do naczyń", "price": 8.99, "category": "Dom"}
   ],
-  "total": 11.49
+  "total": 13.49
 }`;
   }
 
@@ -251,14 +318,25 @@ OUTPUT (TYLKO JSON):
     try {
       const parsed = JSON.parse(cleaned);
 
-      // For vision mode, add categories to products
+      // For vision mode, add/validate categories for products
       if (mode === 'vision' && parsed.products) {
-        // Products already have categories from AI, but ensure they're valid
+        const storeType = parsed.store_type as StoreType | undefined;
+        const source = parsed.source || '';
+
+        // Check if this is a specialized store (vet, pharmacy, pet store)
+        const forcedCategory = getVisionForcedCategory(storeType, source);
+
         parsed.products = parsed.products.map((p: { name: string; price: number; category?: ExpenseCategory }) => ({
           ...p,
-          category: p.category || 'Inne',
-          confidence: 0.8,
+          // Use forced category for specialized stores, otherwise AI category or fallback
+          category: forcedCategory || p.category || 'Inne',
+          confidence: forcedCategory ? 1.0 : 0.8,
         }));
+
+        // Log for debugging
+        if (forcedCategory) {
+          console.log(`[AICategorizerService] Forced category "${forcedCategory}" for store type "${storeType}" (${source})`);
+        }
       }
 
       return parsed;
