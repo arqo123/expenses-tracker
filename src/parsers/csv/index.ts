@@ -4,12 +4,116 @@ export interface ParsedTransaction {
   amount: number;
   description: string;
   rawLine: string;
+  forcedCategory?: string;  // Pre-determined category (e.g., "Inwestycje" for XTB)
+}
+
+export interface SkippedStats {
+  count: number;
+  reasons: Record<string, number>;
 }
 
 export interface CSVParseResult {
   bank: string;
   transactions: ParsedTransaction[];
   errors: string[];
+  skipped: SkippedStats;
+}
+
+// Context for transaction filtering
+interface TransactionContext {
+  transactionType: string;  // Rodzaj transakcji (col 3)
+  recipient: string;        // Odbiorca/Zleceniodawca (col 5)
+  description: string;      // Opis (col 6)
+  amount: number;
+}
+
+// Human-readable labels for skip reasons
+const SKIP_REASON_LABELS: Record<string, string> = {
+  'internal_transfer': 'przelewów wewnętrznych',
+  'atm_withdrawal': 'wypłat z bankomatu',
+  'card_payment': 'spłat karty',
+  'bank_fee': 'prowizji bankowych',
+  'interest': 'operacji odsetkowych',
+  'zen_topup': 'doładowań Zen',
+  'revolut_topup': 'doładowań Revolut',
+  'self_transfer': 'przelewów własnych',
+};
+
+// Format skipped stats for user display
+export function formatSkippedStats(skipped: SkippedStats): string {
+  if (skipped.count === 0) return '';
+
+  const parts = Object.entries(skipped.reasons)
+    .map(([reason, count]) => `${count} ${SKIP_REASON_LABELS[reason] || reason}`)
+    .join(', ');
+
+  return `Pominięto ${skipped.count} transakcji (${parts})`;
+}
+
+// Returns skip reason or null if transaction should be processed
+function getSkipReason(ctx: TransactionContext, userName?: string): string | null {
+  const type = ctx.transactionType.toUpperCase();
+  const recipient = ctx.recipient.toLowerCase();
+  const desc = ctx.description.toLowerCase();
+
+  // 1. Internal transfers - always skip
+  if (type.includes('PRZELEW WEWNĘTRZNY')) return 'internal_transfer';
+
+  // 2. ATM withdrawals - cash, not expense
+  if (type.includes('WYPŁATA') && type.includes('BANKOMAT')) return 'atm_withdrawal';
+
+  // 3. Credit card payments
+  if (type.includes('WCZEŚN.SPŁ.KARTY') || type.includes('SPŁATA KARTY')) return 'card_payment';
+
+  // 4. Bank fees
+  if (type === 'PROWIZJA') return 'bank_fee';
+
+  // 5. Interest operations
+  if (type === 'OBCIĄŻENIE' && desc.includes('podatek')) return 'interest';
+  if (type === 'UZNANIE' && (desc.includes('odsetki') || desc.includes('kapitalizacja'))) return 'interest';
+
+  // 6. Financial account top-ups (Zen, Revolut) - NOT XTB (that goes as Inwestycje)
+  if (recipient.includes('zen.com') || desc.includes('zen.com') || desc.includes('zencom')) return 'zen_topup';
+  if (desc.includes('revolut') && desc.includes('top-up')) return 'revolut_topup';
+
+  // 7. Self-transfers based on description
+  if (desc.includes('przelew własny') || desc.includes('przelew wlasny')) return 'self_transfer';
+
+  // 8. Self-transfers based on recipient name (if userName provided)
+  if (userName) {
+    const nameParts = userName.toLowerCase().split(/\s+/);
+    const recipientLower = recipient.toLowerCase();
+    // Check if all name parts appear in recipient
+    if (nameParts.length >= 2 && nameParts.every(part => recipientLower.includes(part))) {
+      return 'self_transfer';
+    }
+  }
+
+  return null; // Don't skip
+}
+
+// Returns forced category or null if AI should categorize
+function getForcedCategory(ctx: TransactionContext): string | null {
+  const recipient = ctx.recipient.toLowerCase();
+  const desc = ctx.description.toLowerCase();
+  const type = ctx.transactionType.toUpperCase();
+
+  // XTB → Inwestycje
+  if (recipient.includes('xtb.com') || desc.includes('xtb.com') || desc.includes('xtb s.a.')) {
+    return 'Inwestycje';
+  }
+
+  // Public transport tickets → Transport
+  if (type.includes('ZAKUP BILETU')) {
+    return 'Transport';
+  }
+
+  // Phone top-up → Subskrypcje
+  if (type.includes('DOŁADOWANIE TELEFONU')) {
+    return 'Subskrypcje';
+  }
+
+  return null; // AI categorizes
 }
 
 // Detect bank format from CSV content
@@ -62,10 +166,11 @@ export function parseCSV(content: string): CSVParseResult {
 }
 
 // Millennium Bank format
-function parseMillennium(content: string): CSVParseResult {
+function parseMillennium(content: string, userName?: string): CSVParseResult {
   const lines = content.split('\n');
   const transactions: ParsedTransaction[] = [];
   const errors: string[] = [];
+  const skipped: SkippedStats = { count: 0, reasons: {} };
 
   // Skip header
   for (let i = 1; i < lines.length; i++) {
@@ -90,6 +195,8 @@ function parseMillennium(content: string): CSVParseResult {
       // 10: Waluta
 
       const dateStr = cols[1] || '';
+      const transactionType = cols[3] || '';
+      const recipient = cols[5] || '';
       const description = cols[6] || '';
       const debit = parseAmount(cols[7] || '');
       const credit = parseAmount(cols[8] || '');
@@ -97,22 +204,37 @@ function parseMillennium(content: string): CSVParseResult {
 
       if (!dateStr || amount === 0) continue;
 
-      // Extract merchant from description
-      const merchant = extractMerchant(description);
+      // Build transaction context for filtering
+      const ctx: TransactionContext = { transactionType, recipient, description, amount };
+
+      // Check if transaction should be skipped
+      const skipReason = getSkipReason(ctx, userName);
+      if (skipReason) {
+        skipped.count++;
+        skipped.reasons[skipReason] = (skipped.reasons[skipReason] || 0) + 1;
+        continue;
+      }
+
+      // Check for forced category (e.g., XTB → Inwestycje)
+      const forcedCategory = getForcedCategory(ctx) || undefined;
+
+      // Extract merchant from recipient or description
+      const merchant = extractMerchant(recipient || description);
 
       transactions.push({
         date: formatDate(dateStr),
         merchant,
         amount,
-        description,
+        description: description || recipient,
         rawLine: line,
+        forcedCategory,
       });
     } catch (e) {
       errors.push(`Line ${i + 1}: ${e}`);
     }
   }
 
-  return { bank: 'millennium', transactions, errors };
+  return { bank: 'millennium', transactions, errors, skipped };
 }
 
 // mBank format
@@ -172,7 +294,7 @@ function parseMBank(content: string): CSVParseResult {
     }
   }
 
-  return { bank: 'mbank', transactions, errors };
+  return { bank: 'mbank', transactions, errors, skipped: { count: 0, reasons: {} } };
 }
 
 // Revolut format
@@ -216,7 +338,7 @@ function parseRevolut(content: string): CSVParseResult {
     }
   }
 
-  return { bank: 'revolut', transactions, errors };
+  return { bank: 'revolut', transactions, errors, skipped: { count: 0, reasons: {} } };
 }
 
 // Revolut Polish format
@@ -280,7 +402,7 @@ function parseRevolutPL(content: string): CSVParseResult {
     }
   }
 
-  return { bank: 'revolut-pl', transactions, errors };
+  return { bank: 'revolut-pl', transactions, errors, skipped: { count: 0, reasons: {} } };
 }
 
 // ZEN Bank format
@@ -347,7 +469,7 @@ function parseZen(content: string): CSVParseResult {
     }
   }
 
-  return { bank: 'zen', transactions, errors };
+  return { bank: 'zen', transactions, errors, skipped: { count: 0, reasons: {} } };
 }
 
 // Helper: Extract merchant from ZEN description
@@ -444,7 +566,7 @@ function parseGeneric(content: string): CSVParseResult {
     }
   }
 
-  return { bank: 'unknown', transactions, errors };
+  return { bank: 'unknown', transactions, errors, skipped: { count: 0, reasons: {} } };
 }
 
 // Helper: Parse CSV line respecting quotes
