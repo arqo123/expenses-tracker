@@ -125,6 +125,16 @@ export class DatabaseService {
     return result.rows.length > 0;
   }
 
+  // Get expense by ID
+  async getExpenseById(expenseId: string): Promise<Expense | null> {
+    const query = `
+      SELECT * FROM expenses
+      WHERE title = $1 AND status = 'active'
+    `;
+    const result = await this.pool.query(query, [expenseId]);
+    return result.rows.length > 0 ? this.mapToExpense(result.rows[0]) : null;
+  }
+
   // Get user's last expense (for correction)
   async getLastExpenseByUser(userName: string): Promise<Expense | null> {
     const query = `
@@ -146,6 +156,22 @@ export class DatabaseService {
       LIMIT $2
     `;
     const result = await this.pool.query(query, [userName, limit]);
+    return result.rows.map(row => this.mapToExpense(row));
+  }
+
+  // Get recent expenses by source (for OCR edit)
+  async getRecentExpensesBySource(
+    userName: string,
+    source: string,
+    limit: number
+  ): Promise<Expense[]> {
+    const query = `
+      SELECT * FROM expenses
+      WHERE user_name = $1 AND zrodlo = $2 AND status = 'active'
+      ORDER BY created_at DESC
+      LIMIT $3
+    `;
+    const result = await this.pool.query(query, [userName, source, limit]);
     return result.rows.map(row => this.mapToExpense(row));
   }
 
@@ -288,6 +314,89 @@ export class DatabaseService {
     await this.pool.query(query, [skrot.toLowerCase(), category]);
   }
 
+  // Save product learning for future categorization
+  // IMPORTANT: Saves the FULL phrase, not individual words
+  // e.g. "kremowe mydło w płynie" → Dom (not "krem" → Dom)
+  async saveProductLearning(
+    productName: string,
+    correctCategory: ExpenseCategory,
+    storeName?: string
+  ): Promise<void> {
+    const pattern = this.normalizeProductName(productName);
+
+    // Skip if pattern is too short
+    if (pattern.length < 3) {
+      console.log(`[Database] Skipping learning - pattern too short: "${pattern}"`);
+      return;
+    }
+
+    const storePattern = storeName?.toLowerCase() || null;
+
+    try {
+      await this.pool.query(`
+        INSERT INTO product_learnings (product_pattern, correct_category, store_pattern)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (product_pattern, store_pattern) DO UPDATE SET
+          correct_category = $2,
+          usage_count = product_learnings.usage_count + 1,
+          updated_at = NOW()
+      `, [pattern, correctCategory, storePattern]);
+
+      console.log(`[Database] Saved learning: "${pattern}" → ${correctCategory}`);
+    } catch (error) {
+      console.error(`[Database] Failed to save learning for "${pattern}":`, error);
+    }
+  }
+
+  // Get product learnings for categorization
+  async getProductLearnings(
+    productNames: string[],
+    storeName?: string
+  ): Promise<Map<string, ExpenseCategory>> {
+    const result = new Map<string, ExpenseCategory>();
+
+    if (productNames.length === 0) {
+      return result;
+    }
+
+    // Fetch all learnings, prioritizing store-specific ones
+    // Order by pattern length DESC to match more specific patterns first
+    const query = `
+      SELECT product_pattern, correct_category, store_pattern
+      FROM product_learnings
+      WHERE ($1::text IS NULL OR store_pattern IS NULL OR store_pattern = $1)
+      ORDER BY
+        CASE WHEN store_pattern IS NOT NULL THEN 0 ELSE 1 END,
+        LENGTH(product_pattern) DESC,
+        usage_count DESC
+    `;
+    const { rows } = await this.pool.query(query, [storeName?.toLowerCase() || null]);
+
+    // Match patterns to product names
+    // Check if normalized product name contains the pattern OR pattern contains the name
+    for (const name of productNames) {
+      const normalizedName = this.normalizeProductName(name);
+      for (const row of rows) {
+        // Match if: name contains pattern OR pattern contains name (for similar products)
+        if (normalizedName.includes(row.product_pattern) || row.product_pattern.includes(normalizedName)) {
+          result.set(name, row.correct_category as ExpenseCategory);
+          console.log(`[Database] Matched learning: "${name}" → ${row.correct_category} (pattern: ${row.product_pattern})`);
+          break;
+        }
+      }
+    }
+
+    return result;
+  }
+
+  // Normalize product name for comparison (keeps full phrase)
+  private normalizeProductName(name: string): string {
+    return name.toLowerCase()
+      .replace(/[^a-ząćęłńóśźż0-9\s]/g, '')  // Keep Polish letters and numbers
+      .replace(/\s+/g, ' ')                    // Normalize whitespace
+      .trim();
+  }
+
   private async getExistingHashes(client: pg.PoolClient): Promise<Set<string>> {
     const query = 'SELECT hash FROM expenses';
     const result = await client.query(query);
@@ -308,6 +417,8 @@ export class DatabaseService {
       expense.shop.toLowerCase().replace(/\s+/g, '_'),
       expense.date || new Date().toISOString().split('T')[0],
       expense.user.toLowerCase(),
+      // Include description to avoid collisions for multiple products with same price
+      (expense.description || '').toLowerCase().replace(/\s+/g, '_').slice(0, 50),
     ];
     return parts.join('_');
   }
@@ -501,6 +612,24 @@ export class DatabaseService {
       ON CONFLICT (skrot) DO NOTHING
     `);
     console.log('[Database] ✓ merchants table ready');
+
+    // 005_product_learnings.sql
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS product_learnings (
+        id SERIAL PRIMARY KEY,
+        product_pattern VARCHAR(255) NOT NULL,
+        correct_category VARCHAR(50) NOT NULL,
+        store_pattern VARCHAR(255),
+        confidence DECIMAL(3,2) DEFAULT 1.0,
+        usage_count INTEGER DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(product_pattern, store_pattern)
+      )
+    `);
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_learnings_pattern ON product_learnings(product_pattern)');
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_learnings_store ON product_learnings(store_pattern)');
+    console.log('[Database] ✓ product_learnings table ready');
 
     console.log('[Database] All migrations completed successfully!');
   }
