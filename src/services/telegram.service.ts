@@ -82,12 +82,18 @@ export class TelegramService {
     created: number,
     duplicates: number,
     total: number,
-    categoryBreakdown?: Record<string, CategoryBreakdown>
+    categoryBreakdown?: Record<string, CategoryBreakdown>,
+    skippedInfo?: string
   ): Promise<TelegramMessage> {
     let text = `📊 Import CSV zakonczony:
 ✅ Utworzono: ${created}
 ⏭️ Duplikaty: ${duplicates}
 📋 Lacznie: ${total}`;
+
+    // Add skipped info if provided
+    if (skippedInfo) {
+      text += `\n🚫 ${skippedInfo}`;
+    }
 
     // Add category breakdown if provided
     if (categoryBreakdown && Object.keys(categoryBreakdown).length > 0) {
