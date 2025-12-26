@@ -69,6 +69,7 @@ export interface CategorizationResult {
   category: ExpenseCategory;
   amount: number;
   confidence: number;
+  description?: string;
   is_bill?: boolean;
   suggested_shop?: string | null;
 }
@@ -81,9 +82,12 @@ export interface BatchCategorizationItem {
   confidence: number;
 }
 
+export type StoreType = 'grocery' | 'veterinary' | 'pharmacy' | 'restaurant' | 'electronics' | 'clothing' | 'home' | 'pet_store' | 'other';
+
 export interface VisionResult {
   image_type: 'receipt' | 'ecommerce';
   source: string;
+  store_type?: StoreType;
   products: Array<{
     name: string;
     price: number;

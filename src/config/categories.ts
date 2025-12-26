@@ -60,6 +60,10 @@ export const MERCHANT_PATTERNS: Record<string, ExpenseCategory> = {
   'lotos': 'Paliwo',
   'amic': 'Paliwo',
   'moya': 'Paliwo',
+  'stacja paliw': 'Paliwo',
+  'stacja benzynowa': 'Paliwo',
+  'tankowanie': 'Paliwo',
+  'paliwo': 'Paliwo',
 
   // Dom
   'ikea': 'Dom',
@@ -158,6 +162,12 @@ KRYTYCZNE REGUŁY (zawsze sprawdź!):
 - Revolut top-up → "Przelewy" (nie Inwestycje)
 - Allegro → sprawdź kontekst produktu
 - Amazon → sprawdź kontekst produktu
+
+ROZPOZNAWANIE SKLEPÓW I PRODUKTÓW:
+- "stacja paliw [nazwa]" → shop: [nazwa], category: Paliwo, description: stacja paliw
+- "guma", "przekąska", "napój", "jedzenie" bez sklepu → shop: Nieznany, category: Zakupy spożywcze
+- "kawa", "latte", "cappuccino" bez sklepu → shop: Nieznany, category: Kawiarnie
+- Jeśli nie ma nazwy sklepu, użyj "Nieznany" jako shop
 `;
 
 export function buildSystemPrompt(): string {
