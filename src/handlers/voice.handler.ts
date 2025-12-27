@@ -5,6 +5,8 @@ import { textHandler } from './text.handler.ts';
 import { nlpQueryHandler } from './nlp-query.handler.ts';
 import { correctionHandler } from './correction.handler.ts';
 import { isQuery, isCorrection } from '../parsers/text.parser.ts';
+import { shoppingAddHandler } from './shopping.handler.ts';
+import { ShoppingAIService } from '../services/shopping-ai.service.ts';
 
 const MAX_VOICE_DURATION = 60; // seconds
 const MAX_VOICE_SIZE = 1024 * 1024; // 1 MB
@@ -67,6 +69,18 @@ export async function voiceHandler(c: Context, message: TelegramMessage): Promis
 
     if (isCorrection(normalizedText)) {
       return correctionHandler(c, textMessage);
+    }
+
+    // Check for shopping list intent
+    try {
+      const shoppingAI = new ShoppingAIService();
+      const intent = await shoppingAI.detectIntent(normalizedText);
+
+      if (intent.type === 'add_to_list') {
+        return shoppingAddHandler(c, textMessage, intent.items);
+      }
+    } catch (error) {
+      console.error('[VoiceHandler] Shopping intent detection failed:', error);
     }
 
     // Default: treat as expense

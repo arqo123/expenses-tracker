@@ -1,5 +1,6 @@
 import pg from 'pg';
-import type { Expense, CreateExpenseInput, ExpenseCategory } from '../types/expense.types.ts';
+import type { Expense, CreateExpenseInput, ExpenseCategory, GroupedExpense, ExpenseOrGroup } from '../types/expense.types.ts';
+import type { PendingReceipt, MatchedExpense, ReplaceResult } from '../types/receipt-matcher.types.ts';
 import { getDatabaseUrl } from '../config/env.ts';
 import { withRetry } from '../utils/retry.ts';
 
@@ -16,6 +17,11 @@ export class DatabaseService {
     });
   }
 
+  // Get pool for other services
+  getPool(): pg.Pool {
+    return this.pool;
+  }
+
   // Create single expense
   async createExpense(expense: CreateExpenseInput): Promise<Expense> {
     const id = this.generateExpenseId();
@@ -26,8 +32,8 @@ export class DatabaseService {
       const query = `
         INSERT INTO expenses (
           title, data, kwota, waluta, kategoria, sprzedawca,
-          user_name, opis, zrodlo, raw_input, status, hash, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          user_name, opis, zrodlo, raw_input, status, hash, created_at, receipt_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         RETURNING *
       `;
 
@@ -45,6 +51,7 @@ export class DatabaseService {
         'active',
         hash,
         now,
+        expense.receipt_id || null,
       ];
 
       const result = await this.pool.query(query, values);
@@ -82,8 +89,8 @@ export class DatabaseService {
         const query = `
           INSERT INTO expenses (
             title, data, kwota, waluta, kategoria, sprzedawca,
-            user_name, opis, zrodlo, raw_input, status, hash, created_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            user_name, opis, zrodlo, raw_input, status, hash, created_at, receipt_id
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
           RETURNING *
         `;
 
@@ -101,6 +108,7 @@ export class DatabaseService {
           'active',
           hash,
           now,
+          expense.receipt_id || null,
         ];
 
         const result = await client.query(query, values);
@@ -156,6 +164,85 @@ export class DatabaseService {
       LIMIT $2
     `;
     const result = await this.pool.query(query, [userName, limit]);
+    return result.rows.map(row => this.mapToExpense(row));
+  }
+
+  // Get recent expenses with receipt grouping for statistics
+  async getRecentExpensesGrouped(userName: string, limit: number = 10): Promise<ExpenseOrGroup[]> {
+    const query = `
+      WITH grouped AS (
+        SELECT
+          receipt_id,
+          sprzedawca as shop,
+          SUM(kwota) as total_amount,
+          COUNT(*) as product_count,
+          MIN(data) as data,
+          MIN(created_at) as created_at,
+          user_name
+        FROM expenses
+        WHERE user_name = $1
+          AND status = 'active'
+          AND receipt_id IS NOT NULL
+        GROUP BY receipt_id, sprzedawca, user_name
+
+        UNION ALL
+
+        SELECT
+          NULL as receipt_id,
+          sprzedawca as shop,
+          kwota as total_amount,
+          1 as product_count,
+          data,
+          created_at,
+          user_name
+        FROM expenses
+        WHERE user_name = $1
+          AND status = 'active'
+          AND receipt_id IS NULL
+      )
+      SELECT * FROM grouped
+      ORDER BY created_at DESC
+      LIMIT $2
+    `;
+    const result = await this.pool.query(query, [userName, limit]);
+
+    return result.rows.map(row => {
+      const productCount = parseInt(row.product_count as string, 10);
+
+      if (productCount > 1 && row.receipt_id) {
+        // Grouped receipt
+        return {
+          receipt_id: row.receipt_id as string,
+          shop: row.shop as string,
+          total_amount: parseFloat(row.total_amount as string),
+          product_count: productCount,
+          data: row.data instanceof Date ? row.data.toISOString().slice(0, 10) : String(row.data),
+          created_at: row.created_at as string,
+          user_name: row.user_name as string,
+        } as GroupedExpense;
+      } else {
+        // Single expense - need to fetch full details
+        return {
+          receipt_id: null,
+          shop: row.shop as string,
+          total_amount: parseFloat(row.total_amount as string),
+          product_count: 1,
+          data: row.data instanceof Date ? row.data.toISOString().slice(0, 10) : String(row.data),
+          created_at: row.created_at as string,
+          user_name: row.user_name as string,
+        } as GroupedExpense;
+      }
+    });
+  }
+
+  // Get individual products from a receipt
+  async getReceiptProducts(receiptId: string): Promise<Expense[]> {
+    const query = `
+      SELECT * FROM expenses
+      WHERE receipt_id = $1 AND status = 'active'
+      ORDER BY created_at ASC
+    `;
+    const result = await this.pool.query(query, [receiptId]);
     return result.rows.map(row => this.mapToExpense(row));
   }
 
@@ -427,7 +514,7 @@ export class DatabaseService {
     return {
       id: row.title as string,
       data: row.data instanceof Date
-        ? row.data.toISOString().split('T')[0]
+        ? row.data.toISOString().slice(0, 10)
         : String(row.data),
       kwota: parseFloat(row.kwota as string),
       waluta: row.waluta as string,
@@ -440,7 +527,227 @@ export class DatabaseService {
       status: row.status as Expense['status'],
       hash: row.hash as string,
       created_at: row.created_at as string,
+      receipt_id: row.receipt_id as string | null,
     };
+  }
+
+  // ===== RECEIPT MATCHING METHODS =====
+
+  // Find manual expenses that might match a scanned receipt
+  async findMatchingManualExpenses(
+    userName: string,
+    receiptDate: string,
+    receiptTotal: number,
+    receiptShop: string
+  ): Promise<MatchedExpense[]> {
+    const normalizedShop = receiptShop.toLowerCase()
+      .replace(/\s*(sp\.?\s*z\.?\s*o\.?\s*o\.?|spółka|s\.?a\.?)\s*/gi, '')
+      .replace(/\s*(polska|markety?|sklepy?)\s*/gi, '')
+      .replace(/\d+/g, '')
+      .replace(/[^a-ząćęłńóśźż\s]/gi, '')
+      .trim()
+      .split(' ')[0] || '';
+
+    const query = `
+      SELECT title as id, kwota, sprzedawca, data, zrodlo
+      FROM expenses
+      WHERE zrodlo IN ('telegram_text', 'telegram_voice')
+        AND status = 'active'
+        AND user_name = $1
+        AND data BETWEEN ($2::date - INTERVAL '4 days') AND ($2::date + INTERVAL '4 days')
+        AND kwota BETWEEN ($3 * 0.95) AND ($3 * 1.05)
+        AND (
+          LOWER(sprzedawca) = LOWER($4)
+          OR LOWER($5) LIKE '%' || LOWER(sprzedawca) || '%'
+          OR LOWER(sprzedawca) LIKE '%' || $5 || '%'
+        )
+      ORDER BY ABS(data - $2::date), ABS(kwota - $3)
+      LIMIT 5
+    `;
+
+    const result = await this.pool.query(query, [
+      userName,
+      receiptDate,
+      receiptTotal,
+      receiptShop,
+      normalizedShop,
+    ]);
+
+    return result.rows.map(row => ({
+      id: row.id as string,
+      kwota: parseFloat(row.kwota),
+      sprzedawca: row.sprzedawca as string,
+      data: row.data instanceof Date
+        ? row.data.toISOString().split('T')[0]
+        : String(row.data),
+      zrodlo: row.zrodlo as MatchedExpense['zrodlo'],
+    }));
+  }
+
+  // Save pending receipt session
+  async saveReceiptSession(session: PendingReceipt): Promise<void> {
+    const query = `
+      INSERT INTO pending_receipts (
+        session_id, user_name, chat_id, receipt_data, matched_expense_ids, status, created_at, expires_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `;
+
+    await this.pool.query(query, [
+      session.sessionId,
+      session.userName,
+      session.chatId,
+      JSON.stringify(session.receiptData),
+      session.matchedExpenses.map(m => m.id),
+      session.status,
+      session.createdAt,
+      session.expiresAt,
+    ]);
+  }
+
+  // Get pending receipt session
+  async getReceiptSession(sessionId: string): Promise<PendingReceipt | null> {
+    const query = `
+      SELECT session_id, user_name, chat_id, receipt_data, matched_expense_ids, status, created_at, expires_at
+      FROM pending_receipts
+      WHERE session_id = $1
+    `;
+
+    const result = await this.pool.query(query, [sessionId]);
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    const row = result.rows[0];
+
+    // Fetch matched expenses details
+    const matchedExpenses: MatchedExpense[] = [];
+    if (row.matched_expense_ids && row.matched_expense_ids.length > 0) {
+      const expQuery = `
+        SELECT title as id, kwota, sprzedawca, data, zrodlo
+        FROM expenses
+        WHERE title = ANY($1)
+      `;
+      const expResult = await this.pool.query(expQuery, [row.matched_expense_ids]);
+      for (const expRow of expResult.rows) {
+        matchedExpenses.push({
+          id: expRow.id as string,
+          kwota: parseFloat(expRow.kwota),
+          sprzedawca: expRow.sprzedawca as string,
+          data: expRow.data instanceof Date
+            ? expRow.data.toISOString().split('T')[0]
+            : String(expRow.data),
+          zrodlo: expRow.zrodlo as MatchedExpense['zrodlo'],
+        });
+      }
+    }
+
+    return {
+      sessionId: row.session_id,
+      userName: row.user_name,
+      chatId: Number(row.chat_id),
+      receiptData: row.receipt_data,
+      matchedExpenses,
+      status: row.status,
+      createdAt: row.created_at,
+      expiresAt: row.expires_at,
+    };
+  }
+
+  // Replace manual expense with receipt products (atomic)
+  async replaceManualWithReceipt(
+    oldExpenseId: string,
+    newExpenses: CreateExpenseInput[],
+    userName: string
+  ): Promise<ReplaceResult> {
+    const client = await this.pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      // Soft delete the old expense
+      const deleteResult = await client.query(
+        `UPDATE expenses SET status = 'deleted' WHERE title = $1 AND user_name = $2 RETURNING title`,
+        [oldExpenseId, userName]
+      );
+
+      if (deleteResult.rowCount === 0) {
+        console.log(`[Database] Old expense ${oldExpenseId} not found or already deleted`);
+      }
+
+      // Create new expenses from receipt
+      const created: Expense[] = [];
+      const existingHashes = await this.getExistingHashes(client);
+
+      for (const expense of newExpenses) {
+        const hash = this.generateHash(expense);
+
+        if (existingHashes.has(hash)) {
+          continue; // Skip duplicates
+        }
+
+        const id = this.generateExpenseId();
+        const now = new Date().toISOString();
+
+        const query = `
+          INSERT INTO expenses (
+            title, data, kwota, waluta, kategoria, sprzedawca,
+            user_name, opis, zrodlo, raw_input, status, hash, created_at, receipt_id
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          RETURNING *
+        `;
+
+        const values = [
+          id,
+          expense.date || now.split('T')[0],
+          expense.amount,
+          expense.currency || 'PLN',
+          expense.category,
+          expense.shop,
+          expense.user,
+          expense.description || '',
+          expense.source,
+          expense.raw_input || '',
+          'active',
+          hash,
+          now,
+          expense.receipt_id || null,
+        ];
+
+        const result = await client.query(query, values);
+        created.push(this.mapToExpense(result.rows[0]));
+        existingHashes.add(hash);
+      }
+
+      await client.query('COMMIT');
+
+      return {
+        deletedExpenseId: oldExpenseId,
+        created,
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  // Mark receipt session as processed
+  async markReceiptSessionProcessed(sessionId: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE pending_receipts SET status = 'processed' WHERE session_id = $1`,
+      [sessionId]
+    );
+  }
+
+  // Cleanup expired receipt sessions
+  async cleanupExpiredReceiptSessions(): Promise<number> {
+    const result = await this.pool.query(`
+      DELETE FROM pending_receipts
+      WHERE expires_at < NOW() OR status = 'processed'
+    `);
+    return result.rowCount || 0;
   }
 
   async close(): Promise<void> {
@@ -630,6 +937,82 @@ export class DatabaseService {
     await this.pool.query('CREATE INDEX IF NOT EXISTS idx_learnings_pattern ON product_learnings(product_pattern)');
     await this.pool.query('CREATE INDEX IF NOT EXISTS idx_learnings_store ON product_learnings(store_pattern)');
     console.log('[Database] ✓ product_learnings table ready');
+
+    // 006_pending_receipts.sql - for receipt matching feature
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS pending_receipts (
+        id SERIAL PRIMARY KEY,
+        session_id VARCHAR(36) NOT NULL UNIQUE,
+        user_name VARCHAR(50) NOT NULL,
+        chat_id BIGINT NOT NULL,
+        receipt_data JSONB NOT NULL,
+        matched_expense_ids TEXT[],
+        status VARCHAR(20) DEFAULT 'pending',
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        expires_at TIMESTAMPTZ DEFAULT NOW() + INTERVAL '1 hour'
+      )
+    `);
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_pending_session ON pending_receipts(session_id)');
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_pending_expires ON pending_receipts(expires_at)');
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_receipts(status)');
+    console.log('[Database] ✓ pending_receipts table ready');
+
+    // 007_shopping_lists.sql - for shopping list feature
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS shopping_lists (
+        id SERIAL PRIMARY KEY,
+        list_id VARCHAR(36) NOT NULL UNIQUE,
+        name VARCHAR(100) DEFAULT 'Lista zakupow',
+        is_active BOOLEAN DEFAULT true,
+        created_by VARCHAR(50) NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_shopping_lists_active ON shopping_lists(is_active)');
+    console.log('[Database] ✓ shopping_lists table ready');
+
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS shopping_items (
+        id SERIAL PRIMARY KEY,
+        item_id VARCHAR(36) NOT NULL UNIQUE,
+        list_id VARCHAR(36) NOT NULL REFERENCES shopping_lists(list_id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        quantity INTEGER DEFAULT 1,
+        shop_category VARCHAR(50),
+        added_by VARCHAR(50) NOT NULL,
+        is_checked BOOLEAN DEFAULT false,
+        priority INTEGER DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_shopping_items_list ON shopping_items(list_id)');
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_shopping_items_checked ON shopping_items(is_checked)');
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_shopping_items_category ON shopping_items(shop_category)');
+    console.log('[Database] ✓ shopping_items table ready');
+
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS shopping_stats (
+        id SERIAL PRIMARY KEY,
+        product_name VARCHAR(255) NOT NULL UNIQUE,
+        purchase_count INTEGER DEFAULT 1,
+        avg_interval_days INTEGER,
+        last_bought_at TIMESTAMPTZ,
+        typical_shop VARCHAR(255),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_shopping_stats_name ON shopping_stats(product_name)');
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_shopping_stats_count ON shopping_stats(purchase_count DESC)');
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_shopping_stats_last_bought ON shopping_stats(last_bought_at)');
+    console.log('[Database] ✓ shopping_stats table ready');
+
+    // 008_receipt_grouping.sql - for grouping receipt items in statistics
+    await this.pool.query('ALTER TABLE expenses ADD COLUMN IF NOT EXISTS receipt_id VARCHAR(36)');
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_expenses_receipt_id ON expenses(receipt_id)');
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_expenses_user_receipt ON expenses(user_name, receipt_id, created_at DESC)');
+    console.log('[Database] ✓ receipt_id column ready');
 
     console.log('[Database] All migrations completed successfully!');
   }

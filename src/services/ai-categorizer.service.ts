@@ -218,6 +218,46 @@ GDY BRAK SKLEPU - użyj "Nieznany":
 - "guma do żucia 6,50" → shop: "Nieznany", description: "guma do żucia"
 - "kawa 15" → shop: "Nieznany", description: "kawa"
 
+ROZPOZNAWANIE NATURALNYCH ZDAŃ:
+Użytkownicy piszą różnie - rozpoznaj wzorce:
+- "na stacji X", "w sklepie X", "u X", "w X" → X to SKLEP
+- "zakupione/kupione w X", "z X" → X to SKLEP
+- Produkty to rzeczowniki pospolite: guma, chleb, paliwo, kawa, piwo
+- Sklepy to nazwy własne/brandy: Darek, Orlen, Żabka, Lidl, Biedronka
+
+PRZYKŁADY NATURALNYCH ZDAŃ:
+- "guma do żucia zakupiona na stacji darex 6,50 zł"
+  → shop: "Darex", description: "guma do żucia", amount: 6.50, category: "Zakupy spozywcze"
+  (UWAGA: stacja to tylko miejsce, guma to żywność → Zakupy spozywcze!)
+- "kawa na stacji shell 12 zł"
+  → shop: "Shell", description: "kawa", amount: 12, category: "Kawiarnie"
+  (kawa to napój, nie paliwo!)
+- "tankowanie u orlena 250"
+  → shop: "Orlen", description: "tankowanie", amount: 250, category: "Paliwo"
+- "piwo kupione w biedronce za 5 zł"
+  → shop: "Biedronka", description: "piwo", amount: 5, category: "Zakupy spozywcze"
+- "obiad w restauracji u mamy 45 zl"
+  → shop: "U Mamy", description: "obiad", amount: 45, category: "Restauracje"
+- "kawa w żabce 8 zł"
+  → shop: "Żabka", description: "kawa", amount: 8, category: "Kawiarnie"
+
+KOREKTA LITERÓWEK W OPISIE:
+- "guma do życia" → "guma do żucia"
+- "guma do rzucia" → "guma do żucia"
+- "kaawa" → "kawa"
+- Poprawiaj oczywiste błędy ortograficzne w opisie produktu
+
+PRIORYTET PRODUKTU NAD MIEJSCEM:
+Kategoria zależy od PRODUKTU, nie od miejsca zakupu!
+- "guma na stacji" → Zakupy spozywcze (guma to żywność, nie paliwo!)
+- "kawa na stacji" → Kawiarnie (kawa, nie paliwo!)
+- "piwo w żabce" → Zakupy spozywcze
+- "tankowanie na stacji" → Paliwo (tankowanie = paliwo)
+- "paliwo orlen" → Paliwo
+
+Tylko te produkty to Paliwo: tankowanie, paliwo, benzyna, diesel, ON, LPG, gaz
+Żywność/napoje kupione na stacji to nadal Zakupy spozywcze!
+
 OUTPUT (TYLKO JSON):
 {"shop": "Darex", "category": "Paliwo", "amount": 259.40, "description": "stacja paliw", "confidence": 0.95}`;
     }
@@ -243,19 +283,44 @@ Przeanalizuj obraz paragonu/rachunku/screenshota zamowienia.
 WYCIĄGNIJ:
 1. Nazwę sklepu/restauracji (source)
 2. Typ sklepu (store_type): grocery, veterinary, pharmacy, restaurant, electronics, clothing, home, pet_store, other
-3. Produkty z cenami I KATEGORIAMI
+3. Produkty z cenami NETTO (po rabatach) I KATEGORIAMI
 4. Typ obrazu: "receipt" lub "ecommerce"
+
+KRYTYCZNE - OBSŁUGA RABATÓW:
+1. Znajdź KOŃCOWĄ SUMĘ z paragonu (np. "Razem", "SUMA", "Do zapłaty") - to jest wartość "total"
+2. Dla KAŻDEGO produktu z rabatem (RABAT, ZNIZKA, KUPON, ujemna kwota poniżej):
+   - Odejmij rabat od ceny produktu
+   - Zwróć TYLKO cenę NETTO (np. Masło 5.00, RABAT -1.00 → price: 4.00)
+3. NIE twórz osobnych pozycji dla rabatów
+4. WERYFIKACJA: suma wszystkich "price" MUSI równać się "total"
+5. Pole "total_discounts" = suma wszystkich rabatów (wartość dodatnia)
+6. WAŻNE: Pole "total" = DOKŁADNA wartość z linii "Razem" na paragonie - NIE obliczaj, ODCZYTAJ!
+
+PRZYKŁAD paragonu Lidl:
+  Mleko UHT 3.2%    6.58
+  RABAT            -0.99
+  Masło            5.00
+  ---
+  Razem           10.59
+
+OUTPUT:
+  products: [
+    {"name": "Mleko UHT 3.2%", "price": 5.59},  // 6.58 - 0.99
+    {"name": "Masło", "price": 5.00}
+  ]
+  total: 10.59  // = 5.59 + 5.00 ✓
+  total_discounts: 0.99
 
 KATEGORYZACJA PRODUKTÓW:
 - Dla sklepów weterynaryjnych/zoologicznych → WSZYSTKO jako "Zwierzeta"
 - Dla aptek → WSZYSTKO jako "Zdrowie"
 - Dla mieszanych sklepów (Lidl, Biedronka, Carrefour, Auchan):
   - Żywność (chleb, masło, mleko, mięso, warzywa, owoce) → "Zakupy spozywcze"
-  - Chemia (płyn do naczyń, proszek, środki czystości, Ajax, Fairy) → "Dom"
+  - Chemia (płyn do naczyń, proszek, środki czystości) → "Dom"
   - Kosmetyki (szampon, krem, pasta do zębów) → "Uroda"
-  - Karma dla zwierząt, zabawki dla zwierząt → "Zwierzeta"
+  - Karma dla zwierząt → "Zwierzeta"
   - Leki, suplementy → "Zdrowie"
-  - Artykuły dziecięce (pieluchy, mleko dla dzieci) → "Dzieci"
+  - Artykuły dziecięce (pieluchy, przeciery owocowe dla dzieci) → "Dzieci"
 
 DOSTĘPNE KATEGORIE:
 Zakupy spozywcze, Restauracje, Delivery, Kawiarnie, Transport, Paliwo, Auto, Dom,
@@ -268,10 +333,11 @@ OUTPUT (TYLKO JSON):
   "source": "Lidl",
   "store_type": "grocery",
   "products": [
-    {"name": "Chleb", "price": 4.50, "category": "Zakupy spozywcze"},
-    {"name": "Płyn do naczyń", "price": 8.99, "category": "Dom"}
+    {"name": "Mleko UHT 3.2%", "price": 5.59, "category": "Zakupy spozywcze"},
+    {"name": "Masło", "price": 5.00, "category": "Zakupy spozywcze"}
   ],
-  "total": 13.49
+  "total": 10.59,
+  "total_discounts": 0.99
 }`;
   }
 

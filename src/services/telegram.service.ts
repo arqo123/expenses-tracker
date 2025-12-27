@@ -3,6 +3,8 @@ import type {
   TelegramMessage,
   SendMessageOptions,
   InlineKeyboardMarkup,
+  BotCommand,
+  MenuButton,
 } from '../types/telegram.types.ts';
 import { CATEGORY_EMOJI, type ExpenseCategory } from '../types/expense.types.ts';
 
@@ -47,13 +49,22 @@ export class TelegramService {
     amount: number,
     category: ExpenseCategory,
     confidence: number,
-    expenseId?: string
+    expenseId?: string,
+    description?: string
   ): Promise<TelegramMessage> {
     const isLowConfidence = confidence < 0.7;
     const emoji = CATEGORY_EMOJI[category] || '❓';
     const amountStr = amount.toFixed(2).replace('.00', '');
 
-    let text = `${emoji} ${shop} ${amountStr} zl → ${category}`;
+    let text: string;
+    if (description) {
+      // Produkt górą, sklep niżej
+      text = `${emoji} ${description} ${amountStr} zl → ${category}\n📍 ${shop}`;
+    } else {
+      // Fallback: sklep jako główny element
+      text = `${emoji} ${shop} ${amountStr} zl → ${category}`;
+    }
+
     if (isLowConfidence) {
       text += '\n_Popraw jesli zle._';
     }
@@ -201,6 +212,17 @@ export class TelegramService {
 
   async getWebhookInfo(): Promise<{ url: string; pending_update_count: number }> {
     return this.callApi<{ url: string; pending_update_count: number }>('getWebhookInfo', {});
+  }
+
+  async setMyCommands(commands: BotCommand[]): Promise<boolean> {
+    return this.callApi<boolean>('setMyCommands', { commands });
+  }
+
+  async setChatMenuButton(chatId?: number, menuButton?: MenuButton): Promise<boolean> {
+    return this.callApi<boolean>('setChatMenuButton', {
+      chat_id: chatId,
+      menu_button: menuButton || { type: 'commands' },
+    });
   }
 
   private async callApi<T>(method: string, body: object): Promise<T> {

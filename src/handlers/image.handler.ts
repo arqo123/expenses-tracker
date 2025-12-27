@@ -2,6 +2,8 @@ import type { Context } from 'hono';
 import type { TelegramMessage } from '../types/telegram.types.ts';
 import { getUserName } from './webhook.handler.ts';
 import { CATEGORY_EMOJI, type ExpenseCategory } from '../types/expense.types.ts';
+import { ReceiptMatcherService } from '../services/receipt-matcher.service.ts';
+import { ShoppingDatabaseService } from '../services/shopping-database.service.ts';
 
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -72,6 +74,20 @@ export async function imageHandler(c: Context, message: TelegramMessage): Promis
       return c.json({ ok: true });
     }
 
+    // ===== PROPORCJONALNA KOREKTA CEN =====
+    // Jeśli suma produktów różni się od total z paragonu - skoryguj proporcjonalnie
+    const receiptTotal = visionResult.total;
+    const productSum = validProducts.reduce((sum, p) => sum + p.price, 0);
+
+    if (receiptTotal > 0 && Math.abs(productSum - receiptTotal) > 0.10) {
+      const correctionRatio = receiptTotal / productSum;
+      console.log(`[ImageHandler] Price correction: ${productSum.toFixed(2)} → ${receiptTotal.toFixed(2)} (ratio: ${correctionRatio.toFixed(4)})`);
+
+      for (const product of validProducts) {
+        product.price = Math.round(product.price * correctionRatio * 100) / 100;
+      }
+    }
+
     // Apply learned categories from previous corrections
     const productNames = validProducts.map(p => p.name);
     const learnings = await database.getProductLearnings(productNames, visionResult.source);
@@ -85,7 +101,10 @@ export async function imageHandler(c: Context, message: TelegramMessage): Promis
       }
     }
 
-    // Create expenses using batch with deduplication
+    // Generate unique receipt ID for grouping all items from this receipt
+    const receiptId = crypto.randomUUID();
+
+    // Create expense inputs (not saved yet - may need user decision)
     const expenseInputs = validProducts.map(product => ({
       amount: product.price,
       category: product.category || 'Inne' as const,
@@ -94,12 +113,11 @@ export async function imageHandler(c: Context, message: TelegramMessage): Promis
       source: 'telegram_image' as const,
       description: product.name,
       raw_input: `[OCR] ${product.name} ${product.price}`,
+      receipt_id: receiptId,
     }));
 
-    const { created, duplicates } = await database.createExpensesBatch(expenseInputs);
-    const createdExpenses = created.map(e => e.id);
-
-    // Group products by category
+    // Calculate total and group by category first (needed for both paths)
+    const totalAmount = validProducts.reduce((sum, p) => sum + p.price, 0);
     const categoryGroups: Record<string, Array<{ name: string; price: number }>> = {};
     for (const product of validProducts) {
       const cat = product.category || 'Inne';
@@ -107,8 +125,95 @@ export async function imageHandler(c: Context, message: TelegramMessage): Promis
       categoryGroups[cat].push({ name: product.name, price: product.price });
     }
 
+    // ===== RECEIPT MATCHING: Check for similar manual expenses =====
+    const receiptMatcher = new ReceiptMatcherService();
+    const shopName = visionResult.source || 'Unknown';
+    const today = new Date().toISOString().split('T')[0] || new Date().toISOString().slice(0, 10);
+    const matches = await database.findMatchingManualExpenses(
+      userName,
+      today,
+      totalAmount,
+      shopName
+    );
+
+    if (matches.length > 0) {
+      // Found potential duplicates - ask user before saving
+      const sessionId = receiptMatcher.generateSessionId();
+
+      await database.saveReceiptSession({
+        sessionId,
+        userName,
+        chatId,
+        receiptData: {
+          source: shopName,
+          total: totalAmount,
+          productCount: validProducts.length,
+          expenseInputs,
+          categoryGroups,
+        },
+        matchedExpenses: matches,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      });
+
+      const message = receiptMatcher.formatMatchMessage({
+        receiptShop: shopName,
+        receiptTotal: totalAmount,
+        productCount: validProducts.length,
+        categoryGroups,
+        matches,
+      });
+
+      const keyboard = receiptMatcher.buildMatchKeyboard({ matches, sessionId });
+
+      await telegram.sendMessage({
+        chat_id: chatId,
+        text: message,
+        parse_mode: 'Markdown',
+        reply_markup: keyboard,
+      });
+
+      await database.createAuditLog(
+        'RECEIPT_MATCH',
+        {
+          receipt_shop: shopName,
+          receipt_total: totalAmount,
+          matched_count: matches.length,
+          session_id: sessionId,
+        },
+        userName
+      );
+
+      console.log(`[ImageHandler] Found ${matches.length} matching expenses, waiting for user decision`);
+      return c.json({ ok: true, pending_decision: true });
+    }
+
+    // ===== No matches - proceed with normal expense creation =====
+    const { created, duplicates } = await database.createExpensesBatch(expenseInputs);
+    const createdExpenses = created.map(e => e.id);
+
+    // ===== AUTO-CHECK: Remove matching items from shopping list =====
+    let checkedFromList: string[] = [];
+    try {
+      const shoppingDb = new ShoppingDatabaseService(database.getPool());
+      const listItems = await shoppingDb.getItems();
+
+      if (listItems.length > 0) {
+        const productNames = validProducts.map(p => p.name);
+        const matches = await shoppingDb.matchReceiptToList(productNames);
+
+        if (matches.length > 0) {
+          checkedFromList = await shoppingDb.checkMatchedItems(matches, userName);
+          console.log(`[ImageHandler] Auto-checked ${checkedFromList.length} items from shopping list`);
+        }
+      }
+    } catch (error) {
+      console.error('[ImageHandler] Shopping list auto-check failed:', error);
+      // Continue without auto-check on error
+    }
+
     // Build response message with products grouped by category
-    const totalAmount = validProducts.reduce((sum, p) => sum + p.price, 0);
     let text = `📷 Paragon z *${visionResult.source}*\n\n`;
 
     // Products grouped by category
@@ -124,6 +229,11 @@ export async function imageHandler(c: Context, message: TelegramMessage): Promis
     // Total
     text += `💰 Razem: *${totalAmount.toFixed(2)} zł*\n`;
 
+    // Info o rabatach
+    if (visionResult.total_discounts && visionResult.total_discounts > 0) {
+      text += `🏷️ Uwzględniono rabaty: *-${visionResult.total_discounts.toFixed(2)} zł*\n`;
+    }
+
     // Category stats
     const categoryStats = Object.entries(categoryGroups)
       .map(([cat, prods]) => `${prods.length}x ${cat}`)
@@ -138,9 +248,9 @@ export async function imageHandler(c: Context, message: TelegramMessage): Promis
       text += `\n🔄 Duplikaty: ${duplicates.length} (juz istnieja)`;
     }
 
-    // Info about skipped products (rebates)
-    if (skippedCount > 0) {
-      text += `\n⏭️ Pominieto ${skippedCount} rabatów/zniżek`;
+    // Info about items checked from shopping list
+    if (checkedFromList.length > 0) {
+      text += `\n\n🛒 *Odhaczono z listy:* ${checkedFromList.join(', ')}`;
     }
 
     // Handle case when all products are duplicates
@@ -175,6 +285,7 @@ export async function imageHandler(c: Context, message: TelegramMessage): Promis
         duplicate_count: duplicates.length,
         skipped_count: skippedCount,
         total: totalAmount,
+        total_discounts: visionResult.total_discounts || 0,
         image_type: visionResult.image_type,
       },
       userName

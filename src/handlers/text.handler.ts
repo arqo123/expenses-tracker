@@ -50,7 +50,8 @@ export async function textHandler(c: Context, message: TelegramMessage): Promise
       amount,
       category,
       result.confidence || 0.8,
-      expense.id
+      expense.id,
+      description
     );
 
     // Audit log
@@ -68,7 +69,18 @@ export async function textHandler(c: Context, message: TelegramMessage): Promise
 
     console.log(`[TextHandler] Created expense ${expense.id}: ${shop} ${amount} -> ${category}`);
     return c.json({ ok: true, expense_id: expense.id });
-  } catch (error) {
+  } catch (error: unknown) {
+    // Check for duplicate key error (expense already exists)
+    const pgError = error as { code?: string };
+    if (pgError.code === '23505') {
+      console.log('[TextHandler] Duplicate expense, skipping');
+      await telegram.sendMessage({
+        chat_id: chatId,
+        text: '⏭️ Wydatek już zapisany',
+      });
+      return c.json({ ok: true, duplicate: true });
+    }
+
     console.error('[TextHandler] Error:', error);
     await telegram.sendError(chatId, 'Nie udalo sie przetworzyc wydatku. Sprobuj: sklep kwota');
     return c.json({ ok: false }, 500);

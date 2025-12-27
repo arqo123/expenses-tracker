@@ -13,7 +13,8 @@
     "docker:build": "docker-compose build",
     "docker:up": "docker-compose up -d",
     "docker:logs": "docker-compose logs -f",
-    "dev:tunnel": "./scripts/dev-tunnel.sh"
+    "dev:tunnel": "./scripts/dev-tunnel.sh",
+    "setup:bot": "bun src/scripts/setup-bot.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",

@@ -23,6 +23,18 @@ const idempotencyCleanup = new Cron('*/5 * * * *', async () => {
   }
 });
 
+// Receipt session cleanup (every 15 minutes)
+const receiptSessionCleanup = new Cron('*/15 * * * *', async () => {
+  try {
+    const cleaned = await database.cleanupExpiredReceiptSessions();
+    if (cleaned > 0) {
+      console.log(`[Scheduler] Cleaned up ${cleaned} expired receipt sessions`);
+    }
+  } catch (error) {
+    console.error('[Scheduler] Error cleaning receipt sessions:', error);
+  }
+});
+
 // Weekly report placeholder (Sunday 21:00 Warsaw time)
 const weeklyReport = new Cron('0 21 * * 0', {
   timezone: 'Europe/Warsaw',
@@ -35,6 +47,7 @@ const weeklyReport = new Cron('0 21 * * 0', {
 process.on('SIGINT', async () => {
   console.log('Shutting down...');
   idempotencyCleanup.stop();
+  receiptSessionCleanup.stop();
   weeklyReport.stop();
   await database.close();
   process.exit(0);
@@ -43,6 +56,7 @@ process.on('SIGINT', async () => {
 process.on('SIGTERM', async () => {
   console.log('Shutting down...');
   idempotencyCleanup.stop();
+  receiptSessionCleanup.stop();
   weeklyReport.stop();
   await database.close();
   process.exit(0);

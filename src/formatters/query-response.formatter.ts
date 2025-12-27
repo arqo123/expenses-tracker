@@ -1,4 +1,4 @@
-import type { NLPQueryResult, ResponseFormat, QueryResultItem } from '../types/nlp-query.types.ts';
+import type { NLPQueryResult, ResponseFormat } from '../types/nlp-query.types.ts';
 import { CATEGORY_EMOJI, type ExpenseCategory } from '../types/expense.types.ts';
 
 /**

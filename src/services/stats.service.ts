@@ -1,5 +1,5 @@
 import type { DatabaseService } from './database.service.ts';
-import type { Expense, ExpenseCategory } from '../types/expense.types.ts';
+import type { Expense, ExpenseCategory, ExpenseOrGroup } from '../types/expense.types.ts';
 import { CATEGORY_EMOJI } from '../types/expense.types.ts';
 
 // Period type for queries
@@ -547,6 +547,16 @@ export class StatsService {
   async getRecentExpenses(limit: number): Promise<Expense[]> {
     const arek = await this.database.getRecentExpenses('Arek', limit);
     const nastka = await this.database.getRecentExpenses('Nastka', limit);
+
+    return [...arek, ...nastka]
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, limit);
+  }
+
+  // Get recent expenses with receipt grouping for statistics display
+  async getRecentExpensesGrouped(limit: number): Promise<ExpenseOrGroup[]> {
+    const arek = await this.database.getRecentExpensesGrouped('Arek', limit);
+    const nastka = await this.database.getRecentExpensesGrouped('Nastka', limit);
 
     return [...arek, ...nastka]
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())

@@ -76,3 +76,29 @@ export interface SendMessageOptions {
   reply_markup?: InlineKeyboardMarkup;
   reply_to_message_id?: number;
 }
+
+// Bot commands for menu
+export interface BotCommand {
+  command: string;
+  description: string;
+}
+
+// Menu button types
+export type MenuButton =
+  | MenuButtonCommands
+  | MenuButtonWebApp
+  | MenuButtonDefault;
+
+export interface MenuButtonCommands {
+  type: 'commands';
+}
+
+export interface MenuButtonWebApp {
+  type: 'web_app';
+  text: string;
+  web_app: { url: string };
+}
+
+export interface MenuButtonDefault {
+  type: 'default';
+}

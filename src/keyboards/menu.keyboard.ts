@@ -20,6 +20,7 @@ function backButton(section?: string): InlineButton {
 // ==================== MAIN MENU ====================
 export function mainMenuKeyboard(): InlineKeyboardMarkup {
   return buildKeyboard([
+    [{ text: '🛒 Lista zakupow', callback_data: 'list:main' }],
     [{ text: '📅 Raporty czasowe', callback_data: 'menu:time' }],
     [{ text: '📁 Kategorie', callback_data: 'menu:cat' }],
     [{ text: '🏪 Sklepy', callback_data: 'menu:shop' }],

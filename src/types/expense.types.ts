@@ -50,6 +50,7 @@ export interface Expense {
   status: 'active' | 'deleted';
   hash: string;
   created_at: string;
+  receipt_id?: string | null;
 }
 
 export interface CreateExpenseInput {
@@ -62,6 +63,24 @@ export interface CreateExpenseInput {
   description?: string;
   raw_input?: string;
   currency?: string;
+  receipt_id?: string;
+}
+
+// Grouped receipt for statistics display
+export interface GroupedExpense {
+  receipt_id: string | null;
+  shop: string;
+  total_amount: number;
+  product_count: number;
+  data: string;
+  created_at: string;
+  user_name: string;
+}
+
+export type ExpenseOrGroup = Expense | GroupedExpense;
+
+export function isGroupedExpense(item: ExpenseOrGroup): item is GroupedExpense {
+  return 'product_count' in item && (item as GroupedExpense).product_count > 1;
 }
 
 export interface CategorizationResult {
@@ -95,6 +114,7 @@ export interface VisionResult {
     confidence: number;
   }>;
   total: number;
+  total_discounts?: number;
 }
 
 export interface ExpenseQueryResult {

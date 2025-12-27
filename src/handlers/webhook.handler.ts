@@ -9,6 +9,8 @@ import { correctionHandler } from './correction.handler.ts';
 import { callbackHandler } from './callback.handler.ts';
 import { helpCommand, menuCommand, isCommand, parseCommand } from './command.handler.ts';
 import { isQuery, isCorrection } from '../parsers/text.parser.ts';
+import { shoppingCommand, shoppingAddHandler } from './shopping.handler.ts';
+import { ShoppingAIService } from '../services/shopping-ai.service.ts';
 
 // User mapping
 export const USER_MAP: Record<string, string> = {
@@ -128,6 +130,9 @@ async function routeMessage(c: Context, message: TelegramMessage): Promise<Respo
         switch (cmd.command) {
           case 'menu':
             return menuCommand(c, message);
+          case 'lista':
+          case 'zakupy':
+            return shoppingCommand(c, message);
           case 'help':
           case 'start':
             return helpCommand(c, message);
@@ -146,6 +151,20 @@ async function routeMessage(c: Context, message: TelegramMessage): Promise<Respo
     // Check for correction
     if (isCorrection(text)) {
       return correctionHandler(c, message);
+    }
+
+    // Check for shopping list intent (AI detection)
+    try {
+      const shoppingAI = new ShoppingAIService();
+      const intent = await shoppingAI.detectIntent(text);
+
+      if (intent.type === 'add_to_list') {
+        return shoppingAddHandler(c, message, intent.items);
+      }
+      // expense/query/unknown -> continue to textHandler
+    } catch (error) {
+      console.error('[Webhook] Shopping intent detection failed:', error);
+      // Continue to textHandler on error
     }
 
     // Default: expense text

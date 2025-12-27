@@ -3,6 +3,7 @@ import type { TelegramCallbackQuery } from '../types/telegram.types.ts';
 import { getUserName } from './webhook.handler.ts';
 import { EXPENSE_CATEGORIES, CATEGORY_EMOJI, type ExpenseCategory } from '../types/expense.types.ts';
 import { menuHandler } from './menu.handler.ts';
+import { shoppingCallbackHandler } from './shopping-callback.handler.ts';
 
 export async function callbackHandler(
   c: Context,
@@ -25,6 +26,11 @@ export async function callbackHandler(
     console.log(`[CallbackHandler] Action: ${action}, param: ${param}, user: ${userName}`);
 
     switch (action) {
+      // Shopping list callbacks
+      case 'list': {
+        return shoppingCallbackHandler(c, callbackQuery);
+      }
+
       // Stats menu navigation
       case 'menu': {
         // Check if it's a stats menu callback (menu:action:params)
@@ -176,6 +182,193 @@ export async function callbackHandler(
             text: `Wybierz kategorie dla: *${expense.opis}*`,
             parse_mode: 'Markdown',
             reply_markup: keyboard
+          });
+        }
+
+        await telegram.answerCallbackQuery(callbackQuery.id);
+        return c.json({ ok: true });
+      }
+
+      // ===== RECEIPT MATCHING CALLBACKS =====
+
+      case 'rr': {
+        // Receipt Replace: "rr:exp_xxx:session123"
+        const [expenseId, sessionId] = param.split(':');
+
+        if (!expenseId || !sessionId) {
+          await telegram.answerCallbackQuery(callbackQuery.id, 'Nieprawidlowe dane');
+          return c.json({ ok: true });
+        }
+
+        const session = await database.getReceiptSession(sessionId);
+        if (!session || session.status !== 'pending') {
+          await telegram.answerCallbackQuery(callbackQuery.id, 'Sesja wygasla');
+
+          // Session expired - add products normally without replacing
+          if (session?.receiptData?.expenseInputs) {
+            const { created } = await database.createExpensesBatch(session.receiptData.expenseInputs);
+            if (chatId && messageId) {
+              await telegram.editMessage(
+                chatId,
+                messageId,
+                `⏰ *Sesja wygasla*\n\n` +
+                `Produkty z paragonu dodane normalnie:\n` +
+                `✅ ${created.length} nowych wydatków\n` +
+                `💰 Razem: ${session.receiptData.total.toFixed(2)} zł`,
+                'Markdown'
+              );
+            }
+          }
+          return c.json({ ok: true });
+        }
+
+        // Atomic replace: delete old expense, add new ones from receipt
+        const result = await database.replaceManualWithReceipt(
+          expenseId,
+          session.receiptData.expenseInputs,
+          session.userName
+        );
+
+        await database.markReceiptSessionProcessed(sessionId);
+
+        // Update message
+        if (chatId && messageId) {
+          await telegram.editMessage(
+            chatId,
+            messageId,
+            `✅ *Zastąpiono wydatek*\n\n` +
+            `• ❌ Usunięto: ${expenseId.slice(0, 20)}...\n` +
+            `• ✅ Dodano ${result.created.length} produktów z paragonu\n\n` +
+            `💰 Razem: ${session.receiptData.total.toFixed(2)} zł`,
+            'Markdown',
+            result.created.length > 0
+              ? { inline_keyboard: [[{ text: '✏️ Edytuj kategorie', callback_data: `ocr_list:${result.created.length}` }]] }
+              : undefined
+          );
+        }
+
+        await database.createAuditLog(
+          'RECEIPT_REPLACE',
+          {
+            deleted_expense_id: expenseId,
+            created_count: result.created.length,
+            session_id: sessionId,
+            total: session.receiptData.total,
+          },
+          userName,
+          expenseId
+        );
+
+        await telegram.answerCallbackQuery(callbackQuery.id, 'Zastąpiono!');
+        console.log(`[CallbackHandler] Replaced ${expenseId} with ${result.created.length} products`);
+        return c.json({ ok: true });
+      }
+
+      case 'rk': {
+        // Receipt Keep: "rk:session123" - keep both old expense and add new ones
+        const sessionId = param;
+
+        const session = await database.getReceiptSession(sessionId);
+        if (!session || session.status !== 'pending') {
+          await telegram.answerCallbackQuery(callbackQuery.id, 'Sesja wygasla');
+          return c.json({ ok: true });
+        }
+
+        // Add receipt products without deleting anything
+        const { created, duplicates } = await database.createExpensesBatch(session.receiptData.expenseInputs);
+
+        await database.markReceiptSessionProcessed(sessionId);
+
+        // Update message
+        if (chatId && messageId) {
+          let text = `✅ *Dodano produkty z paragonu*\n\n`;
+          text += `• ${created.length} nowych wydatków\n`;
+          if (duplicates.length > 0) {
+            text += `• ${duplicates.length} duplikatów pominięto\n`;
+          }
+          text += `• Poprzedni wydatek zachowany\n\n`;
+          text += `💰 Razem: ${session.receiptData.total.toFixed(2)} zł`;
+
+          await telegram.editMessage(
+            chatId,
+            messageId,
+            text,
+            'Markdown',
+            created.length > 0
+              ? { inline_keyboard: [[{ text: '✏️ Edytuj kategorie', callback_data: `ocr_list:${created.length}` }]] }
+              : undefined
+          );
+        }
+
+        await database.createAuditLog(
+          'RECEIPT_KEEP',
+          {
+            kept_expense_ids: session.matchedExpenses.map(m => m.id),
+            created_count: created.length,
+            duplicate_count: duplicates.length,
+            session_id: sessionId,
+            total: session.receiptData.total,
+          },
+          userName
+        );
+
+        await telegram.answerCallbackQuery(callbackQuery.id, 'Dodano!');
+        console.log(`[CallbackHandler] Added ${created.length} products, kept old expenses`);
+        return c.json({ ok: true });
+      }
+
+      // ===== RECEIPT EXPAND (VIEW PRODUCTS) =====
+      case 'receipt': {
+        // Expand receipt details: "receipt:uuid-xxx"
+        const receiptId = param;
+
+        if (!receiptId) {
+          await telegram.answerCallbackQuery(callbackQuery.id, 'Brak ID paragonu');
+          return c.json({ ok: true });
+        }
+
+        const products = await database.getReceiptProducts(receiptId);
+
+        if (products.length === 0) {
+          await telegram.answerCallbackQuery(callbackQuery.id, 'Nie znaleziono produktow');
+          return c.json({ ok: true });
+        }
+
+        const total = products.reduce((sum, p) => sum + p.kwota, 0);
+        const shop = products[0]?.sprzedawca || 'Nieznany';
+
+        let text = `🧾 *Paragon z ${shop}*\n\n`;
+
+        // Group products by category
+        const byCategory: Record<string, typeof products> = {};
+        for (const p of products) {
+          const cat = p.kategoria;
+          if (!byCategory[cat]) byCategory[cat] = [];
+          byCategory[cat].push(p);
+        }
+
+        for (const [category, items] of Object.entries(byCategory)) {
+          const emoji = CATEGORY_EMOJI[category as ExpenseCategory] || '❓';
+          text += `${emoji} *${category}*:\n`;
+          for (const item of items) {
+            text += `  • ${item.opis}: ${item.kwota.toFixed(2)} zl\n`;
+          }
+          text += '\n';
+        }
+
+        text += `💰 *Razem: ${total.toFixed(2)} zl*`;
+
+        if (chatId) {
+          await telegram.sendMessage({
+            chat_id: chatId,
+            text,
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '✏️ Edytuj kategorie', callback_data: `ocr_list:${products.length}` }],
+                [{ text: '⬅️ Powrot', callback_data: 'menu:search:last:10' }],
+              ]
+            }
           });
         }
 

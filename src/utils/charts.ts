@@ -220,6 +220,45 @@ export function transactionList(data: TransactionData[], limit: number = 10): st
   return list;
 }
 
+// Grouped transaction data for receipts
+export interface GroupedTransactionData {
+  date: string;
+  shop: string;
+  amount: number;
+  productCount: number;
+  receiptId?: string | null;
+  emoji?: string;
+  category?: string;
+}
+
+// Transaction list with receipt grouping support
+export function groupedTransactionList(data: (TransactionData | GroupedTransactionData)[], limit: number = 10): string {
+  if (data.length === 0) return 'Brak transakcji';
+
+  let list = '';
+
+  for (const item of data.slice(0, limit)) {
+    const dateStr = item.date.slice(5); // MM-DD
+    const shopStr = item.shop.slice(0, 12).padEnd(12);
+    const amountStr = formatAmount(item.amount);
+
+    if ('productCount' in item && item.productCount > 1) {
+      // Grouped receipt - show with receipt emoji and product count
+      list += `${dateStr} 🧾 ${shopStr} ${amountStr} zl (${item.productCount} prod.)\n`;
+    } else {
+      // Single expense - show with category emoji
+      const emoji = 'emoji' in item ? item.emoji : '❓';
+      list += `${dateStr} ${emoji} ${shopStr} ${amountStr} zl\n`;
+    }
+  }
+
+  if (data.length > limit) {
+    list += `\n... i ${data.length - limit} wiecej`;
+  }
+
+  return list;
+}
+
 // Daily average display
 export function dailyAverageDisplay(avgDaily: number, daysWithExpenses: number, totalDays: number): string {
   let display = `🎯 Srednie dzienne wydatki\n\n`;

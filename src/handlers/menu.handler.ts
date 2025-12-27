@@ -26,8 +26,10 @@ import {
   userComparisonChart,
   periodComparisonChart,
   transactionList,
+  groupedTransactionList,
   dailyAverageDisplay,
 } from '../utils/charts.ts';
+import type { GroupedExpense } from '../types/expense.types.ts';
 
 export async function menuHandler(
   c: Context,
@@ -744,24 +746,57 @@ async function handleSearchAction(stats: StatsService, params: string[]): Promis
     };
   }
 
-  // Last N expenses
+  // Last N expenses (with receipt grouping)
   if (action === 'last') {
     const limit = parseInt(params[1] || '10', 10);
-    const expenses = await stats.getRecentExpenses(limit);
+    const expenses = await stats.getRecentExpensesGrouped(limit);
 
-    const listData = expenses.map(t => ({
-      date: t.data,
-      shop: t.sprzedawca || 'Nieznany',
-      amount: t.kwota,
-      category: t.kategoria,
-      emoji: CATEGORY_EMOJI[t.kategoria] || '❓',
-    }));
+    const listData = expenses.map(t => {
+      // All items from getRecentExpensesGrouped are GroupedExpense
+      const grouped = t as GroupedExpense;
+      if (grouped.product_count > 1) {
+        // Grouped receipt
+        return {
+          date: grouped.data,
+          shop: grouped.shop || 'Nieznany',
+          amount: grouped.total_amount,
+          productCount: grouped.product_count,
+          receiptId: grouped.receipt_id,
+        };
+      } else {
+        // Single expense
+        return {
+          date: grouped.data,
+          shop: grouped.shop || 'Nieznany',
+          amount: grouped.total_amount,
+          productCount: 1,
+          emoji: '❓',
+        };
+      }
+    });
 
-    const list = transactionList(listData, limit);
+    const list = groupedTransactionList(listData, limit);
+
+    // Build keyboard with expand buttons for receipts
+    const receiptButtons = expenses
+      .map(e => e as GroupedExpense)
+      .filter(g => g.product_count > 1 && g.receipt_id)
+      .slice(0, 5) // Max 5 expand buttons
+      .map(grouped => [{
+        text: `📋 ${grouped.shop.slice(0, 15)} (${grouped.product_count} prod.)`,
+        callback_data: `receipt:${grouped.receipt_id}`,
+      }]);
+
+    const keyboard: InlineKeyboardMarkup = {
+      inline_keyboard: [
+        ...receiptButtons,
+        ...searchMenuKeyboard().inline_keyboard,
+      ],
+    };
 
     return {
       text: `📊 *Ostatnie ${limit} wydatkow*\n\n\`\`\`\n${list}\n\`\`\``,
-      keyboard: searchMenuKeyboard(),
+      keyboard,
     };
   }
 
