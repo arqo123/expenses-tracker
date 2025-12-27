@@ -803,7 +803,45 @@ export class DatabaseService {
   }
 
   // Run migrations - creates tables if they don't exist
+  // If structure is broken, reset and recreate all tables
   async runMigrations(): Promise<void> {
+    console.log('[Database] Checking database structure...');
+
+    // Check if all required tables exist
+    const requiredTables = [
+      'expenses', 'audit_log', 'idempotency', 'merchants',
+      'product_learnings', 'pending_receipts',
+      'shopping_lists', 'shopping_items', 'shopping_stats'
+    ];
+
+    const tablesResult = await this.pool.query(`
+      SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+    `);
+    const existingTables = tablesResult.rows.map(r => r.table_name);
+    console.log('[Database] Existing tables:', existingTables.join(', ') || 'none');
+
+    const missingTables = requiredTables.filter(t => !existingTables.includes(t));
+
+    if (missingTables.length > 0) {
+      console.log('[Database] Missing tables:', missingTables.join(', '));
+      console.log('[Database] Resetting database to fix structure...');
+
+      // Drop all tables and recreate
+      await this.pool.query(`
+        DROP TABLE IF EXISTS shopping_items CASCADE;
+        DROP TABLE IF EXISTS shopping_lists CASCADE;
+        DROP TABLE IF EXISTS shopping_stats CASCADE;
+        DROP TABLE IF EXISTS pending_receipts CASCADE;
+        DROP TABLE IF EXISTS product_learnings CASCADE;
+        DROP TABLE IF EXISTS merchants CASCADE;
+        DROP TABLE IF EXISTS idempotency CASCADE;
+        DROP TABLE IF EXISTS audit_log CASCADE;
+        DROP TABLE IF EXISTS expenses CASCADE;
+      `);
+      console.log('[Database] All tables dropped, recreating...');
+    }
+
     console.log('[Database] Running migrations...');
 
     // 001_expenses.sql
