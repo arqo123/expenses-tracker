@@ -1,3 +1,5 @@
+import { normalizeShopName } from '../../config/merchant-aliases.ts';
+
 export interface ParsedTransaction {
   date: string;
   merchant: string;
@@ -346,6 +348,7 @@ function parseRevolutPL(content: string): CSVParseResult {
   const lines = content.split('\n');
   const transactions: ParsedTransaction[] = [];
   const errors: string[] = [];
+  const skipped: SkippedStats = { count: 0, reasons: {} };
 
   // Allowed transaction types
   const allowedTypes = ['płatność kartą', 'bankomat', 'opłata'];
@@ -384,6 +387,14 @@ function parseRevolutPL(content: string): CSVParseResult {
       const amount = Math.abs(parseAmount(amountStr));
       if (amount === 0) continue;
 
+      // Skip top-ups to other cards/accounts (ZEN, Revolut reloads)
+      const descUpper = description.toUpperCase();
+      if (isCardTopUp(descUpper, amount)) {
+        skipped.count++;
+        skipped.reasons['card_topup'] = (skipped.reasons['card_topup'] || 0) + 1;
+        continue;
+      }
+
       // Extract date (format: YYYY-MM-DD HH:MM:SS -> YYYY-MM-DD)
       const dateStr = completedDate.split(' ')[0] || '';
       if (!dateStr) continue;
@@ -402,7 +413,7 @@ function parseRevolutPL(content: string): CSVParseResult {
     }
   }
 
-  return { bank: 'revolut-pl', transactions, errors, skipped: { count: 0, reasons: {} } };
+  return { bank: 'revolut-pl', transactions, errors, skipped };
 }
 
 // ZEN Bank format
@@ -609,8 +620,13 @@ function parseAmount(str: string): number {
 
 // Helper: Extract merchant name from description
 function extractMerchant(description: string): string {
-  // Remove common suffixes
   let merchant = description
+    // Remove transaction IDs (e.g., "Spotify P202b79a43" → "Spotify")
+    .replace(/\s+[Pp][0-9a-f]{6,}$/g, '')    // Hex transaction IDs
+    .replace(/\s*\*\d+$/g, '')                // Card number suffix (*1234)
+    .replace(/\s*#\d+$/g, '')                 // Order numbers (#12345)
+    .replace(/\*temporary\s*auth$/gi, '')     // "Freenow*temporary Auth" → "Freenow"
+    // Remove common suffixes
     .replace(/SP\.?\s*Z\s*O\.?O\.?/gi, '')
     .replace(/SPOLKA\s*(AKCYJNA|Z\.?O\.?O\.?)?/gi, '')
     .replace(/S\.?A\.?$/gi, '')
@@ -627,7 +643,24 @@ function extractMerchant(description: string): string {
     merchant = merchant.charAt(0).toUpperCase() + merchant.slice(1).toLowerCase();
   }
 
-  return merchant || 'Unknown';
+  // Apply known merchant aliases for consistent naming
+  return normalizeShopName(merchant || 'Unknown');
+}
+
+// Helper: Check if transaction is a card top-up (transfer to another card/account)
+function isCardTopUp(descriptionUpper: string, amount: number): boolean {
+  // ZEN top-ups (card reloads) - usually large amounts
+  if (descriptionUpper === 'ZEN' && amount >= 50) return true;
+
+  // Revolut reloads
+  if (descriptionUpper.includes('REVOLUT') && amount >= 50) return true;
+
+  // Explicit top-up keywords
+  if (descriptionUpper.includes('TOP UP') || descriptionUpper.includes('TOP-UP')) return true;
+  if (descriptionUpper.includes('DOŁADOWANIE')) return true;
+  if (descriptionUpper.includes('ZASILENIE')) return true;
+
+  return false;
 }
 
 // Helper: Format date to YYYY-MM-DD
