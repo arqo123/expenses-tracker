@@ -1,0 +1,288 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.4",
+  "serialNumber": "urn:uuid:expense-tracker-api-2025-12-27",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2025-12-27T10:00:00Z",
+    "tools": [
+      {
+        "vendor": "Bun",
+        "name": "bun",
+        "version": "1.3.3"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "name": "expense-tracker-api",
+      "version": "1.0.0",
+      "description": "Expense tracking API built with Bun and Hono"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "hono",
+      "version": "4.11.2",
+      "purl": "pkg:npm/hono@4.11.2",
+      "licenses": [{"license": {"id": "MIT"}}],
+      "description": "Web framework for the Edge",
+      "supplier": {"name": "Yusuke Wada"},
+      "externalReferences": [
+        {"type": "website", "url": "https://hono.dev"},
+        {"type": "vcs", "url": "https://github.com/honojs/hono"}
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pg",
+      "version": "8.16.3",
+      "purl": "pkg:npm/pg@8.16.3",
+      "licenses": [{"license": {"id": "MIT"}}],
+      "description": "PostgreSQL client for Node.js",
+      "supplier": {"name": "Brian M. Carlson"},
+      "externalReferences": [
+        {"type": "website", "url": "https://node-postgres.com"},
+        {"type": "vcs", "url": "https://github.com/brianc/node-postgres"}
+      ]
+    },
+    {
+      "type": "library",
+      "name": "zod",
+      "version": "4.2.1",
+      "purl": "pkg:npm/zod@4.2.1",
+      "licenses": [{"license": {"id": "MIT"}}],
+      "description": "TypeScript-first schema validation",
+      "externalReferences": [
+        {"type": "website", "url": "https://zod.dev"},
+        {"type": "vcs", "url": "https://github.com/colinhacks/zod"}
+      ]
+    },
+    {
+      "type": "library",
+      "name": "croner",
+      "version": "9.1.0",
+      "purl": "pkg:npm/croner@9.1.0",
+      "licenses": [{"license": {"id": "MIT"}}],
+      "description": "Cron scheduler for Node.js",
+      "supplier": {"name": "Hexagon"},
+      "externalReferences": [
+        {"type": "vcs", "url": "https://github.com/hexagon/croner"}
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pg-pool",
+      "version": "3.10.1",
+      "purl": "pkg:npm/pg-pool@3.10.1",
+      "licenses": [{"license": {"id": "MIT"}}],
+      "description": "Connection pool for node-postgres",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "pg-protocol",
+      "version": "1.10.3",
+      "purl": "pkg:npm/pg-protocol@1.10.3",
+      "licenses": [{"license": {"id": "MIT"}}],
+      "description": "PostgreSQL wire protocol implementation",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "pg-types",
+      "version": "2.2.0",
+      "purl": "pkg:npm/pg-types@2.2.0",
+      "licenses": [{"license": {"id": "MIT"}}],
+      "description": "Type parsing for node-postgres",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "pg-cloudflare",
+      "version": "1.2.7",
+      "purl": "pkg:npm/pg-cloudflare@1.2.7",
+      "licenses": [{"license": {"id": "MIT"}}],
+      "description": "Cloudflare support for node-postgres",
+      "scope": "optional"
+    },
+    {
+      "type": "library",
+      "name": "pg-connection-string",
+      "version": "2.9.1",
+      "purl": "pkg:npm/pg-connection-string@2.9.1",
+      "licenses": [{"license": {"id": "MIT"}}],
+      "description": "PostgreSQL connection string parser",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "pg-int8",
+      "version": "1.0.1",
+      "purl": "pkg:npm/pg-int8@1.0.1",
+      "licenses": [{"license": {"id": "ISC"}}],
+      "description": "64-bit integer support for PostgreSQL",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "pgpass",
+      "version": "1.0.5",
+      "purl": "pkg:npm/pgpass@1.0.5",
+      "licenses": [{"license": {"id": "MIT"}}],
+      "description": "PostgreSQL password file support",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "postgres-array",
+      "version": "2.0.0",
+      "purl": "pkg:npm/postgres-array@2.0.0",
+      "licenses": [{"license": {"id": "MIT"}}],
+      "description": "PostgreSQL array type parser",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "postgres-bytea",
+      "version": "1.0.1",
+      "purl": "pkg:npm/postgres-bytea@1.0.1",
+      "licenses": [{"license": {"id": "MIT"}}],
+      "description": "PostgreSQL bytea type parser",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "postgres-date",
+      "version": "1.0.7",
+      "purl": "pkg:npm/postgres-date@1.0.7",
+      "licenses": [{"license": {"id": "MIT"}}],
+      "description": "PostgreSQL date type parser",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "postgres-interval",
+      "version": "1.2.0",
+      "purl": "pkg:npm/postgres-interval@1.2.0",
+      "licenses": [{"license": {"id": "MIT"}}],
+      "description": "PostgreSQL interval type parser",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "split2",
+      "version": "4.2.0",
+      "purl": "pkg:npm/split2@4.2.0",
+      "licenses": [{"license": {"id": "ISC"}}],
+      "description": "Stream splitting utility",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "xtend",
+      "version": "4.0.2",
+      "purl": "pkg:npm/xtend@4.0.2",
+      "licenses": [{"license": {"id": "MIT"}}],
+      "description": "Object extension utility",
+      "scope": "required",
+      "properties": [
+        {"name": "maintenance:status", "value": "unmaintained"}
+      ]
+    },
+    {
+      "type": "library",
+      "name": "@types/bun",
+      "version": "1.3.5",
+      "purl": "pkg:npm/@types/bun@1.3.5",
+      "licenses": [{"license": {"id": "MIT"}}],
+      "description": "TypeScript definitions for Bun",
+      "scope": "optional"
+    },
+    {
+      "type": "library",
+      "name": "@types/pg",
+      "version": "8.16.0",
+      "purl": "pkg:npm/@types/pg@8.16.0",
+      "licenses": [{"license": {"id": "MIT"}}],
+      "description": "TypeScript definitions for node-postgres",
+      "scope": "optional"
+    },
+    {
+      "type": "library",
+      "name": "@types/node",
+      "version": "25.0.3",
+      "purl": "pkg:npm/@types/node@25.0.3",
+      "licenses": [{"license": {"id": "MIT"}}],
+      "description": "TypeScript definitions for Node.js",
+      "scope": "optional"
+    },
+    {
+      "type": "library",
+      "name": "bun-types",
+      "version": "1.3.5",
+      "purl": "pkg:npm/bun-types@1.3.5",
+      "licenses": [{"license": {"id": "MIT"}}],
+      "description": "Bun TypeScript definitions",
+      "scope": "optional"
+    },
+    {
+      "type": "library",
+      "name": "undici-types",
+      "version": "7.16.0",
+      "purl": "pkg:npm/undici-types@7.16.0",
+      "licenses": [{"license": {"id": "MIT"}}],
+      "description": "TypeScript definitions for Undici",
+      "scope": "optional"
+    },
+    {
+      "type": "library",
+      "name": "typescript",
+      "version": "5.9.3",
+      "purl": "pkg:npm/typescript@5.9.3",
+      "licenses": [{"license": {"id": "Apache-2.0"}}],
+      "description": "TypeScript compiler",
+      "scope": "optional"
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "pkg:npm/expense-tracker-api@1.0.0",
+      "dependsOn": [
+        "pkg:npm/hono@4.11.2",
+        "pkg:npm/pg@8.16.3",
+        "pkg:npm/zod@4.2.1",
+        "pkg:npm/croner@9.1.0"
+      ]
+    },
+    {
+      "ref": "pkg:npm/pg@8.16.3",
+      "dependsOn": [
+        "pkg:npm/pg-pool@3.10.1",
+        "pkg:npm/pg-protocol@1.10.3",
+        "pkg:npm/pg-types@2.2.0",
+        "pkg:npm/pg-cloudflare@1.2.7",
+        "pkg:npm/pg-connection-string@2.9.1",
+        "pkg:npm/pgpass@1.0.5",
+        "pkg:npm/xtend@4.0.2"
+      ]
+    },
+    {
+      "ref": "pkg:npm/pg-types@2.2.0",
+      "dependsOn": [
+        "pkg:npm/postgres-array@2.0.0",
+        "pkg:npm/postgres-bytea@1.0.1",
+        "pkg:npm/postgres-date@1.0.7",
+        "pkg:npm/postgres-interval@1.2.0",
+        "pkg:npm/pg-int8@1.0.1"
+      ]
+    },
+    {
+      "ref": "pkg:npm/pgpass@1.0.5",
+      "dependsOn": [
+        "pkg:npm/split2@4.2.0"
+      ]
+    }
+  ],
+  "vulnerabilities": []
+}

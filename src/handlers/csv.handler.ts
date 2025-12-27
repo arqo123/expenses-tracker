@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import type { TelegramMessage } from '../types/telegram.types.ts';
 import { getUserName } from './webhook.handler.ts';
 import { parseCSV, formatSkippedStats } from '../parsers/csv/index.ts';
+import { t } from '../i18n/index.ts';
 
 const MAX_CSV_SIZE = 5 * 1024 * 1024; // 5 MB
 
@@ -17,7 +18,7 @@ export async function csvHandler(c: Context, message: TelegramMessage): Promise<
   try {
     // Validate file size
     if (document.file_size && document.file_size > MAX_CSV_SIZE) {
-      await telegram.sendError(chatId, 'Plik CSV za duzy (max 5 MB)');
+      await telegram.sendError(chatId, t('ui.errors.csvTooLarge', { size: '5 MB' }));
       return c.json({ ok: true });
     }
 
@@ -39,7 +40,7 @@ export async function csvHandler(c: Context, message: TelegramMessage): Promise<
     if (parseResult.transactions.length === 0) {
       await telegram.sendError(
         chatId,
-        `Nie znaleziono transakcji w pliku. Format: ${parseResult.bank}`
+        t('ui.errors.noTransactionsFound', { format: parseResult.bank })
       );
       return c.json({ ok: true });
     }
@@ -49,7 +50,7 @@ export async function csvHandler(c: Context, message: TelegramMessage): Promise<
     const bankName = parseResult.bank;
     const progressMsg = await telegram.sendMessage({
       chat_id: chatId,
-      text: `📊 Przetwarzam ${totalTransactions} transakcji (${bankName})...\n⏳ 0%`,
+      text: `📊 ${t('ui.csv.processing', { count: totalTransactions, bank: bankName, progress: '0%' })}`,
     });
     const progressMsgId = progressMsg.message_id;
 
@@ -67,7 +68,7 @@ export async function csvHandler(c: Context, message: TelegramMessage): Promise<
         await telegram.editMessage(
           chatId,
           progressMsgId,
-          `📊 Przetwarzam ${totalTransactions} transakcji (${bankName})...\n⏳ ${percent}% (${processed}/${totalTransactions})`
+          `📊 ${t('ui.csv.processing', { count: totalTransactions, bank: bankName, progress: `${percent}% (${processed}/${totalTransactions})` })}`
         );
       } catch {
         // Ignore edit errors (e.g., message unchanged)
@@ -220,7 +221,7 @@ export async function csvHandler(c: Context, message: TelegramMessage): Promise<
     });
   } catch (error) {
     console.error('[CSVHandler] Error:', error);
-    await telegram.sendError(chatId, 'Blad przetwarzania pliku CSV.');
+    await telegram.sendError(chatId, t('ui.errors.csvProcessingError'));
     return c.json({ ok: false }, 500);
   }
 }

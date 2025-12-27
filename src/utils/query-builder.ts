@@ -242,15 +242,23 @@ export function buildAggregationSQL(
   // Group by
   sql += ` GROUP BY ${groupColumn}`;
 
-  // Order
+  // Order (validated to prevent SQL injection)
   const orderBy = parsedQuery.aggregation?.orderBy || 'amount';
   const orderDirection = parsedQuery.aggregation?.orderDirection || 'desc';
   const orderColumn = orderBy === 'count' ? 'transaction_count' : 'total_amount';
-  sql += ` ORDER BY ${orderColumn} ${orderDirection.toUpperCase()}`;
+  // Whitelist order direction
+  const safeDirection = orderDirection.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+  sql += ` ORDER BY ${orderColumn} ${safeDirection}`;
 
-  // Limit
+  // Limit (parameterized to prevent SQL injection)
   if (parsedQuery.aggregation?.limit) {
-    sql += ` LIMIT ${parsedQuery.aggregation.limit}`;
+    const limit = parseInt(String(parsedQuery.aggregation.limit), 10);
+    if (isNaN(limit) || limit < 1 || limit > 1000) {
+      throw new Error('Invalid limit value: must be between 1 and 1000');
+    }
+    sql += ` LIMIT $${paramIndex}`;
+    values.push(limit);
+    paramIndex++;
   }
 
   return { sql, values };

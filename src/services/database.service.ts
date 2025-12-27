@@ -13,7 +13,18 @@ export class DatabaseService {
     this.pool = new Pool({
       connectionString: connectionString || getDatabaseUrl(),
       max: 20,
+      min: 2,
       idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000, // 10 second connection timeout
+      statement_timeout: 30000,       // 30 second query timeout
+      query_timeout: 30000,           // 30 second query timeout
+      // Connection error handling
+      allowExitOnIdle: false,
+    });
+
+    // Handle pool errors gracefully
+    this.pool.on('error', (err) => {
+      console.error('[Database] Pool error:', err.message);
     });
   }
 
@@ -494,7 +505,8 @@ export class DatabaseService {
     const now = new Date();
     const date = now.toISOString().slice(0, 10).replace(/-/g, '');
     const time = now.toISOString().slice(11, 23).replace(/[:.]/g, '');
-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+    // Use crypto.randomUUID for security instead of Math.random
+    const random = crypto.randomUUID().slice(0, 8);
     return `exp_${date}_${time}_${random}`;
   }
 
@@ -791,8 +803,14 @@ export class DatabaseService {
 
       if (checkResult.rows.length === 0) {
         console.log(`[Database] Creating database "${dbName}"...`);
-        // Use raw query - can't use parameterized query for CREATE DATABASE
-        await adminPool.query(`CREATE DATABASE "${dbName}"`);
+        // Validate database name to prevent SQL injection
+        // PostgreSQL identifiers: start with letter/underscore, contain letters/digits/underscores
+        if (!/^[a-z_][a-z0-9_]{0,62}$/i.test(dbName)) {
+          throw new Error(`Invalid database name: ${dbName}. Must be a valid PostgreSQL identifier.`);
+        }
+        // Escape double quotes in database name (PostgreSQL identifier quoting)
+        const escapedDbName = dbName.replace(/"/g, '""');
+        await adminPool.query(`CREATE DATABASE "${escapedDbName}"`);
         console.log(`[Database] ✓ Database "${dbName}" created`);
       } else {
         console.log(`[Database] ✓ Database "${dbName}" already exists`);

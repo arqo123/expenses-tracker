@@ -1,5 +1,6 @@
 import type { NLPQueryResult, ResponseFormat } from '../types/nlp-query.types.ts';
 import { CATEGORY_EMOJI, type ExpenseCategory } from '../types/expense.types.ts';
+import { t, formatCurrency } from '../i18n/index.ts';
 
 /**
  * Format query result for different output formats
@@ -14,8 +15,8 @@ export function formatQueryResponse(
 
   if (!result.success) {
     return format === 'telegram'
-      ? 'Nie udalo sie przetworzyc zapytania. Sprobuj ponownie.'
-      : '## Blad\nNie udalo sie przetworzyc zapytania.';
+      ? t('ui.query.processingFailed')
+      : `## ${t('ui.errors.error')}\n${t('ui.query.processingFailed')}`;
   }
 
   const { data, query } = result;
@@ -48,11 +49,11 @@ export function formatQueryResponse(
 
   // Add exclusion info if present
   if (query.categories?.exclude?.length) {
-    text += `\n\n_Wykluczono: ${query.categories.exclude.join(', ')}_`;
+    text += `\n\n_${t('ui.query.excluded', { items: query.categories.exclude.join(', ') })}_`;
   }
 
   if (query.shops?.exclude?.length) {
-    text += `\n\n_Bez sklepow: ${query.shops.exclude.join(', ')}_`;
+    text += `\n\n_${t('ui.query.withoutShops', { items: query.shops.exclude.join(', ') })}_`;
   }
 
   if (format === 'telegram') {
@@ -68,7 +69,7 @@ function formatSumResponse(
   periodDesc: string,
   query: NLPQueryResult['query']
 ): string {
-  let title = 'Suma wydatkow';
+  let title = t('ui.query.sumTitle');
 
   // Add category/shop context if filtered
   if (query.categories?.include?.length) {
@@ -79,12 +80,12 @@ function formatSumResponse(
   }
 
   let text = `**${title}** - ${periodDesc}\n\n`;
-  text += `Lacznie: **${formatAmount(data.total || 0)}**\n`;
-  text += `Transakcji: ${data.count || 0}`;
+  text += `${t('ui.query.totalLabel')} **${formatCurrency(data.total || 0)}**\n`;
+  text += `${t('ui.query.transactionsLabel')} ${data.count || 0}`;
 
   if (data.count && data.count > 0 && data.total) {
     const avg = data.total / data.count;
-    text += `\nSrednia: ${formatAmount(avg)}`;
+    text += `\n${t('ui.query.averageLabel')} ${formatCurrency(avg)}`;
   }
 
   // Add category breakdown with emojis if available
@@ -93,10 +94,10 @@ function formatSumResponse(
     data.items.slice(0, 5).forEach((item) => {
       const emoji = getEmojiForLabel(item.label, 'category');
       const pct = item.percentage ? ` (${item.percentage.toFixed(0)}%)` : '';
-      text += `\n${emoji} ${item.label}: ${formatAmount(item.amount)}${pct}`;
+      text += `\n${emoji} ${item.label}: ${formatCurrency(item.amount)}${pct}`;
     });
     if (data.items.length > 5) {
-      text += `\n_...i ${data.items.length - 5} wiecej_`;
+      text += `\n_${t('ui.query.andMore', { count: data.items.length - 5 })}_`;
     }
   }
 
@@ -108,7 +109,7 @@ function formatCountResponse(
   periodDesc: string,
   query: NLPQueryResult['query']
 ): string {
-  let title = 'Liczba wydatkow';
+  let title = t('ui.query.countTitle');
 
   if (query.categories?.include?.length) {
     title += ` (${query.categories.include.join(', ')})`;
@@ -118,8 +119,8 @@ function formatCountResponse(
   }
 
   let text = `**${title}** - ${periodDesc}\n\n`;
-  text += `Transakcji: **${data.count || 0}**\n`;
-  text += `Laczna kwota: ${formatAmount(data.total || 0)}`;
+  text += `${t('ui.query.transactionsLabel')} **${data.count || 0}**\n`;
+  text += `${t('ui.query.totalLabel')} ${formatCurrency(data.total || 0)}`;
 
   return text;
 }
@@ -129,7 +130,7 @@ function formatAverageResponse(
   periodDesc: string,
   query: NLPQueryResult['query']
 ): string {
-  let title = 'Srednia wydatkow';
+  let title = t('ui.query.averageTitle');
 
   if (query.categories?.include?.length) {
     title += ` (${query.categories.include.join(', ')})`;
@@ -139,8 +140,8 @@ function formatAverageResponse(
   }
 
   let text = `**${title}** - ${periodDesc}\n\n`;
-  text += `Srednia: **${formatAmount(data.average || 0)}**\n`;
-  text += `Suma: ${formatAmount(data.total || 0)} (${data.count || 0} transakcji)`;
+  text += `${t('ui.query.averageLabel')} **${formatCurrency(data.average || 0)}**\n`;
+  text += `${t('ui.query.sumLabel')} ${formatCurrency(data.total || 0)} (${data.count || 0} ${t('ui.stats.transactions')})`;
 
   return text;
 }
@@ -152,22 +153,22 @@ function formatTopResponse(
 ): string {
   const limit = query.aggregation?.limit || 5;
   const groupBy = query.aggregation?.groupBy || 'category';
-  const groupLabel = groupBy === 'category' ? 'kategorie' : 'sklepy';
+  const groupLabel = groupBy === 'category' ? t('ui.stats.topCategories').toLowerCase() : t('ui.stats.topShops').toLowerCase();
 
   let text = `**Top ${limit} ${groupLabel}** - ${periodDesc}\n\n`;
 
   if (data.items && data.items.length > 0) {
-    text += `Lacznie: **${formatAmount(data.total || 0)}**\n\n`;
+    text += `${t('ui.query.totalLabel')} **${formatCurrency(data.total || 0)}**\n\n`;
 
     data.items.forEach((item, idx) => {
       const emoji = getEmojiForLabel(item.label, groupBy);
       const medal = getMedal(idx);
       const pct = item.percentage ? ` (${item.percentage.toFixed(1)}%)` : '';
 
-      text += `${medal} ${emoji} ${item.label}: ${formatAmount(item.amount)}${pct}\n`;
+      text += `${medal} ${emoji} ${item.label}: ${formatCurrency(item.amount)}${pct}\n`;
     });
   } else {
-    text += 'Brak danych w wybranym okresie.';
+    text += t('ui.stats.noData');
   }
 
   return text;
@@ -178,7 +179,7 @@ function formatListResponse(
   periodDesc: string,
   query: NLPQueryResult['query']
 ): string {
-  let title = 'Wydatki';
+  let title = t('ui.query.sumTitle').split(' ')[0]; // "Suma" -> just the expense concept
 
   if (query.categories?.include?.length) {
     title += ` - ${query.categories.include.join(', ')}`;
@@ -190,7 +191,7 @@ function formatListResponse(
   let text = `**${title}** - ${periodDesc}\n\n`;
 
   if (data.items && data.items.length > 0) {
-    text += `Lacznie: **${formatAmount(data.total || 0)}** (${data.count || 0} transakcji)\n\n`;
+    text += `${t('ui.query.totalLabel')} **${formatCurrency(data.total || 0)}** (${data.count || 0} ${t('ui.stats.transactions')})\n\n`;
 
     // Show top 10 categories
     const displayItems = data.items.slice(0, 10);
@@ -199,22 +200,17 @@ function formatListResponse(
       const pct = item.percentage ? ` (${item.percentage.toFixed(1)}%)` : '';
       const countStr = item.count > 1 ? ` x${item.count}` : '';
 
-      text += `${emoji} ${item.label}: ${formatAmount(item.amount)}${pct}${countStr}\n`;
+      text += `${emoji} ${item.label}: ${formatCurrency(item.amount)}${pct}${countStr}\n`;
     });
 
     if (data.items.length > 10) {
-      text += `\n_...i ${data.items.length - 10} wiecej_`;
+      text += `\n_${t('ui.query.andMore', { count: data.items.length - 10 })}_`;
     }
   } else {
-    text += 'Brak wydatkow w wybranym okresie.';
+    text += t('ui.stats.noExpenses');
   }
 
   return text;
-}
-
-function formatAmount(amount: number): string {
-  const formatted = amount.toFixed(2).replace('.00', '');
-  return `${formatted} zl`;
 }
 
 function getEmojiForLabel(label: string, groupBy: string): string {
@@ -242,9 +238,5 @@ function getMedal(index: number): string {
  * Format a short confirmation message for low-confidence queries
  */
 export function formatLowConfidenceMessage(): string {
-  return `Nie jestem pewien co masz na mysli. Sprobuj bardziej precyzyjnie, np.:
-- "suma w grudniu"
-- "top 5 kategorii"
-- "wydatki bez elektroniki"
-- "ile wydalem od 1 do 15 grudnia"`;
+  return t('ui.query.processingFailed');
 }

@@ -1,6 +1,7 @@
 import type { InlineKeyboardMarkup } from '../types/telegram.types.ts';
 import type { ShoppingItem, ShoppingSuggestion, ShopCategory } from '../types/shopping.types.ts';
 import { SHOP_CATEGORY_EMOJI } from '../types/shopping.types.ts';
+import { t } from '../i18n/index.ts';
 
 type InlineButton = { text: string; callback_data: string };
 type InlineRow = InlineButton[];
@@ -13,7 +14,7 @@ function buildKeyboard(rows: InlineRow[]): InlineKeyboardMarkup {
 // Back button helper
 function backButton(section?: string): InlineButton {
   return {
-    text: '⬅️ Powrot',
+    text: `⬅️ ${t('ui.buttons.back')}`,
     callback_data: section ? `list:back:${section}` : 'menu:main',
   };
 }
@@ -21,10 +22,10 @@ function backButton(section?: string): InlineButton {
 // ==================== SHOPPING MAIN MENU ====================
 export function shoppingMainKeyboard(): InlineKeyboardMarkup {
   return buildKeyboard([
-    [{ text: '📋 Pokaz liste', callback_data: 'list:show' }],
-    [{ text: '➕ Dodaj produkt', callback_data: 'list:add:prompt' }],
-    [{ text: '💡 Podpowiedzi', callback_data: 'list:suggest' }],
-    [{ text: '🗑️ Wyczysc liste', callback_data: 'list:clear:confirm' }],
+    [{ text: `📋 ${t('ui.buttons.showList')}`, callback_data: 'list:show' }],
+    [{ text: `➕ ${t('ui.buttons.addProduct')}`, callback_data: 'list:add:prompt' }],
+    [{ text: `💡 ${t('ui.buttons.suggestions')}`, callback_data: 'list:suggest' }],
+    [{ text: `🗑️ ${t('ui.buttons.clearList')}`, callback_data: 'list:clear:confirm' }],
     [backButton()],
   ]);
 }
@@ -92,8 +93,8 @@ export function shoppingListWithItemButtons(
 
   // Action buttons
   rows.push([
-    { text: '➕ Dodaj', callback_data: 'list:add:prompt' },
-    { text: '💡 Podpowiedzi', callback_data: 'list:suggest' },
+    { text: `➕ ${t('ui.buttons.add')}`, callback_data: 'list:add:prompt' },
+    { text: `💡 ${t('ui.buttons.suggestions')}`, callback_data: 'list:suggest' },
   ]);
   rows.push([backButton('main')]);
 
@@ -103,8 +104,8 @@ export function shoppingListWithItemButtons(
 // Simplified keyboard when list is empty
 export function shoppingListEmptyKeyboard(): InlineKeyboardMarkup {
   return buildKeyboard([
-    [{ text: '➕ Dodaj produkt', callback_data: 'list:add:prompt' }],
-    [{ text: '💡 Podpowiedzi', callback_data: 'list:suggest' }],
+    [{ text: `➕ ${t('ui.buttons.addProduct')}`, callback_data: 'list:add:prompt' }],
+    [{ text: `💡 ${t('ui.buttons.suggestions')}`, callback_data: 'list:suggest' }],
     [backButton('main')],
   ]);
 }
@@ -143,13 +144,13 @@ export function itemSelectKeyboard(
   const navRow: InlineRow = [];
   if (page > 0) {
     navRow.push({
-      text: '⬅️ Poprzednie',
+      text: `⬅️ ${t('ui.buttons.previous')}`,
       callback_data: `list:${action}:page:${page - 1}`,
     });
   }
   if (start + pageSize < items.length) {
     navRow.push({
-      text: 'Nastepne ➡️',
+      text: `${t('ui.buttons.next')} ➡️`,
       callback_data: `list:${action}:page:${page + 1}`,
     });
   }
@@ -157,7 +158,7 @@ export function itemSelectKeyboard(
     rows.push(navRow);
   }
 
-  rows.push([{ text: '❌ Anuluj', callback_data: 'list:show' }]);
+  rows.push([{ text: `❌ ${t('ui.buttons.cancel')}`, callback_data: 'list:show' }]);
 
   return buildKeyboard(rows);
 }
@@ -186,7 +187,7 @@ export function suggestionsKeyboard(suggestions: ShoppingSuggestion[]): InlineKe
   }
 
   if (suggestions.length > 0) {
-    rows.push([{ text: '➕ Dodaj wszystkie', callback_data: 'list:add:all' }]);
+    rows.push([{ text: `➕ ${t('ui.buttons.addAll')}`, callback_data: 'list:add:all' }]);
   }
 
   rows.push([backButton('main')]);
@@ -198,8 +199,8 @@ export function suggestionsKeyboard(suggestions: ShoppingSuggestion[]): InlineKe
 export function confirmClearKeyboard(): InlineKeyboardMarkup {
   return buildKeyboard([
     [
-      { text: '✅ Tak, wyczysc', callback_data: 'list:clear:yes' },
-      { text: '❌ Anuluj', callback_data: 'list:main' },
+      { text: `✅ ${t('ui.buttons.yesClear')}`, callback_data: 'list:clear:yes' },
+      { text: `❌ ${t('ui.buttons.cancel')}`, callback_data: 'list:main' },
     ],
   ]);
 }
@@ -207,8 +208,8 @@ export function confirmClearKeyboard(): InlineKeyboardMarkup {
 export function confirmRemoveKeyboard(itemId: string): InlineKeyboardMarkup {
   return buildKeyboard([
     [
-      { text: '✅ Tak, usun', callback_data: `list:remove:confirm:${itemId}` },
-      { text: '❌ Anuluj', callback_data: 'list:show' },
+      { text: `✅ ${t('ui.buttons.yesDelete')}`, callback_data: `list:remove:confirm:${itemId}` },
+      { text: `❌ ${t('ui.buttons.cancel')}`, callback_data: 'list:show' },
     ],
   ]);
 }
@@ -216,15 +217,15 @@ export function confirmRemoveKeyboard(itemId: string): InlineKeyboardMarkup {
 // ==================== AFTER ACTION ====================
 export function afterAddKeyboard(): InlineKeyboardMarkup {
   return buildKeyboard([
-    [{ text: '📋 Pokaz liste', callback_data: 'list:show' }],
-    [{ text: '➕ Dodaj wiecej', callback_data: 'list:add:prompt' }],
+    [{ text: `📋 ${t('ui.buttons.showList')}`, callback_data: 'list:show' }],
+    [{ text: `➕ ${t('ui.buttons.addMore')}`, callback_data: 'list:add:prompt' }],
   ]);
 }
 
 export function afterCheckKeyboard(): InlineKeyboardMarkup {
   return buildKeyboard([
-    [{ text: '✓ Odhacz kolejny', callback_data: 'list:check:select' }],
-    [{ text: '📋 Pokaz liste', callback_data: 'list:show' }],
+    [{ text: `✓ ${t('ui.buttons.checkNext')}`, callback_data: 'list:check:select' }],
+    [{ text: `📋 ${t('ui.buttons.showList')}`, callback_data: 'list:show' }],
   ]);
 }
 
@@ -232,8 +233,8 @@ export function afterCheckKeyboard(): InlineKeyboardMarkup {
 export function quickActionsKeyboard(): InlineKeyboardMarkup {
   return buildKeyboard([
     [
-      { text: '✓ Odhacz', callback_data: 'list:check:select' },
-      { text: '➕ Dodaj', callback_data: 'list:add:prompt' },
+      { text: `✓ ${t('ui.buttons.check')}`, callback_data: 'list:check:select' },
+      { text: `➕ ${t('ui.buttons.add')}`, callback_data: 'list:add:prompt' },
     ],
     [backButton('main')],
   ]);
@@ -273,7 +274,7 @@ export function categorySelectKeyboard(productName: string): InlineKeyboardMarku
     rows.push(row);
   }
 
-  rows.push([{ text: '❌ Anuluj', callback_data: 'list:show' }]);
+  rows.push([{ text: `❌ ${t('ui.buttons.cancel')}`, callback_data: 'list:show' }]);
 
   return buildKeyboard(rows);
 }

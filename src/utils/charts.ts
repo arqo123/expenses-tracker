@@ -1,4 +1,5 @@
 // ASCII chart generation utilities
+import { t, formatCurrency } from '../i18n/index.ts';
 
 const FULL_BLOCK = '█';
 const EMPTY_BLOCK = '░';
@@ -26,7 +27,7 @@ export interface MonthlyData {
 }
 
 export function monthlyTrendChart(data: MonthlyData[]): string {
-  if (data.length === 0) return 'Brak danych';
+  if (data.length === 0) return t('ui.charts.noData');
 
   const maxAmount = Math.max(...data.map(d => d.amount));
   const minAmount = Math.min(...data.map(d => d.amount));
@@ -36,14 +37,13 @@ export function monthlyTrendChart(data: MonthlyData[]): string {
 
   for (const item of data) {
     const bar = horizontalBar(item.amount, maxAmount);
-    const amountStr = formatAmount(item.amount);
     const marker = item.amount === maxAmount ? ' (max)' : item.amount === minAmount ? ' (min)' : '';
-    chart += `${item.label}: ${bar} ${amountStr} zl${marker}\n`;
+    chart += `${item.label}: ${bar} ${formatCurrency(item.amount)}${marker}\n`;
   }
 
-  chart += `\n📈 Srednia: ${formatAmount(avgAmount)} zl/mies.`;
-  chart += `\n📉 Min: ${formatAmount(minAmount)} zl`;
-  chart += `\n📈 Max: ${formatAmount(maxAmount)} zl`;
+  chart += `\n📈 ${t('ui.charts.average')}: ${formatCurrency(avgAmount)}/mies.`;
+  chart += `\n📉 Min: ${formatCurrency(minAmount)}`;
+  chart += `\n📈 Max: ${formatCurrency(maxAmount)}`;
 
   return chart;
 }
@@ -55,7 +55,7 @@ export interface WeekdayData {
 }
 
 export function weekdayChart(data: WeekdayData[]): string {
-  if (data.length === 0) return 'Brak danych';
+  if (data.length === 0) return t('ui.charts.noData');
 
   const maxAmount = Math.max(...data.map(d => d.amount));
   let maxDay = '';
@@ -65,7 +65,6 @@ export function weekdayChart(data: WeekdayData[]): string {
 
   for (const item of data) {
     const bar = horizontalBar(item.amount, maxAmount);
-    const amountStr = formatAmount(item.amount);
     const isMax = item.amount === maxAmount;
 
     if (isMax) {
@@ -73,10 +72,10 @@ export function weekdayChart(data: WeekdayData[]): string {
       maxDayAmount = item.amount;
     }
 
-    chart += `${item.label}: ${bar} ${amountStr} zl${isMax ? ' <--' : ''}\n`;
+    chart += `${item.label}: ${bar} ${formatCurrency(item.amount)}${isMax ? ' <--' : ''}\n`;
   }
 
-  chart += `\n📊 Najwiecej wydajesz w: ${maxDay} (${formatAmount(maxDayAmount)} zl)`;
+  chart += `\n📊 Najwiecej wydajesz w: ${maxDay} (${formatCurrency(maxDayAmount)})`;
 
   return chart;
 }
@@ -90,7 +89,7 @@ export interface CategoryData {
 }
 
 export function categoryBreakdownChart(data: CategoryData[], total: number): string {
-  if (data.length === 0) return 'Brak danych';
+  if (data.length === 0) return t('ui.charts.noData');
 
   const maxAmount = Math.max(...data.map(d => d.amount));
 
@@ -98,12 +97,11 @@ export function categoryBreakdownChart(data: CategoryData[], total: number): str
 
   for (const item of data) {
     const bar = horizontalBar(item.amount, maxAmount, 8);
-    const amountStr = formatAmount(item.amount);
     const percentStr = item.percentage.toFixed(0);
-    chart += `${item.emoji} ${item.category.slice(0, 12).padEnd(12)}: ${bar} ${amountStr} zl (${percentStr}%)\n`;
+    chart += `${item.emoji} ${item.category.slice(0, 12).padEnd(12)}: ${bar} ${formatCurrency(item.amount)} (${percentStr}%)\n`;
   }
 
-  chart += `\n💰 Razem: ${formatAmount(total)} zl`;
+  chart += `\n💰 ${t('ui.charts.total')}: ${formatCurrency(total)}`;
 
   return chart;
 }
@@ -116,7 +114,7 @@ export interface ShopData {
 }
 
 export function shopRankingChart(data: ShopData[]): string {
-  if (data.length === 0) return 'Brak danych';
+  if (data.length === 0) return t('ui.charts.noData');
 
   const maxAmount = Math.max(...data.map(d => d.amount));
 
@@ -128,9 +126,8 @@ export function shopRankingChart(data: ShopData[]): string {
     const rank = i + 1;
     const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `${rank}.`;
     const bar = horizontalBar(item.amount, maxAmount, 6);
-    const amountStr = formatAmount(item.amount);
     const shopName = item.shop.slice(0, 15).padEnd(15);
-    chart += `${medal} ${shopName}: ${bar} ${amountStr} zl (${item.count}x)\n`;
+    chart += `${medal} ${shopName}: ${bar} ${formatCurrency(item.amount)} (${item.count}x)\n`;
   }
 
   return chart;
@@ -144,7 +141,7 @@ export interface UserData {
 }
 
 export function userComparisonChart(data: UserData[]): string {
-  if (data.length === 0) return 'Brak danych';
+  if (data.length === 0) return t('ui.charts.noData');
 
   const total = data.reduce((sum, d) => sum + d.amount, 0);
   const maxAmount = Math.max(...data.map(d => d.amount));
@@ -153,12 +150,11 @@ export function userComparisonChart(data: UserData[]): string {
 
   for (const item of data) {
     const bar = horizontalBar(item.amount, maxAmount, 12);
-    const amountStr = formatAmount(item.amount);
     const percentStr = item.percentage.toFixed(0);
-    chart += `👤 ${item.userName}: ${bar} ${amountStr} zl (${percentStr}%)\n`;
+    chart += `👤 ${item.userName}: ${bar} ${formatCurrency(item.amount)} (${percentStr}%)\n`;
   }
 
-  chart += `\n💰 Razem: ${formatAmount(total)} zl`;
+  chart += `\n💰 ${t('ui.charts.total')}: ${formatCurrency(total)}`;
 
   return chart;
 }
@@ -177,14 +173,14 @@ export function periodComparisonChart(
   const currentBar = horizontalBar(currentAmount, maxAmount, 12);
   const previousBar = horizontalBar(previousAmount, maxAmount, 12);
 
-  let chart = `${previousLabel}: ${previousBar} ${formatAmount(previousAmount)} zl\n`;
-  chart += `${currentLabel}: ${currentBar} ${formatAmount(currentAmount)} zl\n`;
+  let chart = `${previousLabel}: ${previousBar} ${formatCurrency(previousAmount)}\n`;
+  chart += `${currentLabel}: ${currentBar} ${formatCurrency(currentAmount)}\n`;
   chart += `\n`;
 
   if (change > 0) {
-    chart += `📈 Wzrost: +${formatAmount(change)} zl (+${changePercent.toFixed(0)}%)`;
+    chart += `📈 Wzrost: +${formatCurrency(change)} (+${changePercent.toFixed(0)}%)`;
   } else if (change < 0) {
-    chart += `📉 Spadek: ${formatAmount(change)} zl (${changePercent.toFixed(0)}%)`;
+    chart += `📉 Spadek: ${formatCurrency(change)} (${changePercent.toFixed(0)}%)`;
   } else {
     chart += `➡️ Bez zmian`;
   }
@@ -202,19 +198,18 @@ export interface TransactionData {
 }
 
 export function transactionList(data: TransactionData[], limit: number = 10): string {
-  if (data.length === 0) return 'Brak transakcji';
+  if (data.length === 0) return t('ui.stats.noExpenses');
 
   let list = '';
 
   for (const item of data.slice(0, limit)) {
     const dateStr = item.date.slice(5); // MM-DD
     const shopStr = item.shop.slice(0, 12).padEnd(12);
-    const amountStr = formatAmount(item.amount);
-    list += `${dateStr} ${item.emoji} ${shopStr} ${amountStr} zl\n`;
+    list += `${dateStr} ${item.emoji} ${shopStr} ${formatCurrency(item.amount)}\n`;
   }
 
   if (data.length > limit) {
-    list += `\n... i ${data.length - limit} wiecej`;
+    list += `\n${t('ui.query.andMore', { count: data.length - limit })}`;
   }
 
   return list;
@@ -233,27 +228,26 @@ export interface GroupedTransactionData {
 
 // Transaction list with receipt grouping support
 export function groupedTransactionList(data: (TransactionData | GroupedTransactionData)[], limit: number = 10): string {
-  if (data.length === 0) return 'Brak transakcji';
+  if (data.length === 0) return t('ui.stats.noExpenses');
 
   let list = '';
 
   for (const item of data.slice(0, limit)) {
     const dateStr = item.date.slice(5); // MM-DD
     const shopStr = item.shop.slice(0, 12).padEnd(12);
-    const amountStr = formatAmount(item.amount);
 
     if ('productCount' in item && item.productCount > 1) {
       // Grouped receipt - show with receipt emoji and product count
-      list += `${dateStr} 🧾 ${shopStr} ${amountStr} zl (${item.productCount} prod.)\n`;
+      list += `${dateStr} 🧾 ${shopStr} ${formatCurrency(item.amount)} (${item.productCount} prod.)\n`;
     } else {
       // Single expense - show with category emoji
       const emoji = 'emoji' in item ? item.emoji : '❓';
-      list += `${dateStr} ${emoji} ${shopStr} ${amountStr} zl\n`;
+      list += `${dateStr} ${emoji} ${shopStr} ${formatCurrency(item.amount)}\n`;
     }
   }
 
   if (data.length > limit) {
-    list += `\n... i ${data.length - limit} wiecej`;
+    list += `\n${t('ui.query.andMore', { count: data.length - limit })}`;
   }
 
   return list;
@@ -261,8 +255,8 @@ export function groupedTransactionList(data: (TransactionData | GroupedTransacti
 
 // Daily average display
 export function dailyAverageDisplay(avgDaily: number, daysWithExpenses: number, totalDays: number): string {
-  let display = `🎯 Srednie dzienne wydatki\n\n`;
-  display += `💰 Srednio dziennie: ${formatAmount(avgDaily)} zl\n`;
+  let display = `🎯 ${t('ui.stats.averagePerDay')}\n\n`;
+  display += `💰 ${t('ui.stats.averagePerDay')}: ${formatCurrency(avgDaily)}\n`;
   display += `📅 Dni z wydatkami: ${daysWithExpenses}/${totalDays}\n`;
   display += `📊 Aktywnosc: ${((daysWithExpenses / totalDays) * 100).toFixed(0)}%`;
 

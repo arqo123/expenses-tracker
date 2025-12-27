@@ -1,6 +1,7 @@
 import { getEnv } from '../config/env.ts';
 import type { MessageIntent, ShopCategory } from '../types/shopping.types.ts';
 import { PRODUCT_CATEGORY_MAP, SHOP_CATEGORIES } from '../types/shopping.types.ts';
+import { getPrompts } from '../i18n/index.ts';
 
 interface ShoppingAIConfig {
   model: string;
@@ -320,9 +321,28 @@ export class ShoppingAIService {
     return /\d+([.,]\d{1,2})?\s*(zl|zł|pln|gr)|\d+[.,]\d{2}/.test(text);
   }
 
-  // Check for shopping list keywords
+  // Check for shopping list keywords (language-aware)
   private hasShoppingListKeywords(text: string): boolean {
-    const keywords = [
+    const prompts = getPrompts();
+    const shoppingPrompts = prompts.shopping as Record<string, unknown>;
+    const keywords = shoppingPrompts.keywords as Record<string, string[]> | undefined;
+
+    if (keywords) {
+      // Flatten all keyword arrays from i18n
+      const allKeywords = [
+        ...(keywords.buy || []),
+        ...(keywords.need || []),
+        ...(keywords.add || []),
+        ...(keywords.list || []),
+        ...(keywords.mustBuy || []),
+        ...(keywords.useful || []),
+        ...(keywords.missing || []),
+      ];
+      return allKeywords.some((kw) => text.includes(kw.toLowerCase()));
+    }
+
+    // Fallback to hardcoded Polish keywords
+    const fallbackKeywords = [
       'kup',
       'kupic',
       'kupić',
@@ -338,7 +358,7 @@ export class ShoppingAIService {
       'przyda się',
       'brakuje',
     ];
-    return keywords.some((kw) => text.includes(kw));
+    return fallbackKeywords.some((kw) => text.includes(kw));
   }
 
   // Check for Polish quantity patterns (enhanced for voice)
@@ -354,7 +374,7 @@ export class ShoppingAIService {
     ].some((p) => p.test(text));
   }
 
-  // Auto-detect shopping list: multiple products without prices
+  // Auto-detect shopping list: multiple products without prices (language-aware)
   private looksLikeProductList(text: string): boolean {
     // Must NOT have price
     if (this.hasPrice(text)) return false;
@@ -363,15 +383,34 @@ export class ShoppingAIService {
     const parts = text.split(/[,.;]+/).filter((p) => p.trim().length > 2);
     if (parts.length < 2) return false;
 
-    // Known grocery words
-    const groceryWords =
+    // Get grocery words from i18n
+    const prompts = getPrompts();
+    const shoppingPrompts = prompts.shopping as Record<string, unknown>;
+    const groceryWordsList = shoppingPrompts.groceryWords as string[] | undefined;
+
+    if (groceryWordsList && groceryWordsList.length > 0) {
+      const pattern = new RegExp(`\\b(${groceryWordsList.join('|')})\\b`, 'i');
+      return pattern.test(text);
+    }
+
+    // Fallback to hardcoded Polish grocery words
+    const fallbackGroceryWords =
       /\b(mleko|chleb|ser|maslo|masło|jajka|kawa|herbata|mieso|mięso|kurczak|cebula|ziemniak|makaron|ryż|ryz|jogurt|smietana|śmietana|woda|sok|owoce|warzywa|banany|jabłka|jablka|pomidory|ogorki|ogórki)\b/i;
-    return groceryWords.test(text);
+    return fallbackGroceryWords.test(text);
   }
 
-  // Check for query keywords
+  // Check for query keywords (language-aware)
   private hasQueryKeywords(text: string): boolean {
-    const keywords = [
+    const prompts = getPrompts();
+    const shoppingPrompts = prompts.shopping as Record<string, unknown>;
+    const keywords = shoppingPrompts.keywords as Record<string, string[]> | undefined;
+
+    if (keywords && keywords.query) {
+      return keywords.query.some((kw) => text.includes(kw.toLowerCase()));
+    }
+
+    // Fallback to hardcoded Polish keywords
+    const fallbackKeywords = [
       'ile',
       'pokaz',
       'pokaż',
@@ -385,7 +424,7 @@ export class ShoppingAIService {
       'porownaj',
       'porównaj',
     ];
-    return keywords.some((kw) => text.includes(kw));
+    return fallbackKeywords.some((kw) => text.includes(kw));
   }
 
   // Normalize text for matching
@@ -398,34 +437,42 @@ export class ShoppingAIService {
       .trim();
   }
 
-  // Use AI specifically for parsing Polish shopping lists (voice messages)
+  // Build i18n-aware shopping list parsing prompt
+  private buildListParsingPrompt(): string {
+    const prompts = getPrompts();
+    const shopping = prompts.shopping as Record<string, unknown>;
+    const parsingRules = shopping.parsingRules as Record<string, string> | undefined;
+    const voicePatterns = shopping.voicePatterns as Record<string, string> | undefined;
+    const parsingExamples = shopping.parsingExamples as { input?: string; output?: string } | undefined;
+
+    let prompt = `${shopping.listParsing || 'Parse shopping list from voice message. Return ONLY JSON.'}\n\n`;
+
+    if (parsingRules) {
+      prompt += 'PARSING RULES:\n';
+      prompt += `1. ${parsingRules.massInName || 'MASS (grams, kg) -> include in product name'}\n`;
+      prompt += `2. ${parsingRules.quantityInQty || 'QUANTITY (times, pieces) -> increase quantity'}\n`;
+      prompt += `3. ${parsingRules.genitiveToNominative || 'Keep product name in base form'}\n`;
+      prompt += `4. ${parsingRules.splitByCommas || 'Split by commas and periods'}\n\n`;
+    }
+
+    if (voicePatterns) {
+      prompt += 'VOICE PATTERNS:\n';
+      Object.values(voicePatterns).forEach((pattern) => {
+        prompt += `- ${pattern}\n`;
+      });
+      prompt += '\n';
+    }
+
+    if (parsingExamples && parsingExamples.input && parsingExamples.output) {
+      prompt += `EXAMPLE:\nInput: "${parsingExamples.input}"\nOutput: {"items": ${parsingExamples.output}}\n`;
+    }
+
+    return prompt;
+  }
+
+  // Use AI specifically for parsing shopping lists (voice messages) - language-aware
   private async parseShoppingListWithAI(text: string): Promise<MessageIntent> {
-    const systemPrompt = `Parsuj polską listę zakupów z wiadomości głosowej. Zwróć TYLKO JSON.
-
-ZASADY PARSOWANIA:
-1. MASA (gramy, kg) → włącz w nazwę produktu:
-   - "300 gramów sera" → {"name": "ser 300g", "quantity": 1}
-   - "kawa 1 kilogram ziernista" → {"name": "kawa ziernista 1kg", "quantity": 1}
-   - "ser żółty razy 1, 300 gramów" → {"name": "ser żółty 300g", "quantity": 1} (połącz!)
-
-2. ILOŚĆ (razy, sztuki, kartony, główki) → zwiększ quantity:
-   - "mleko razy 2" → {"name": "mleko", "quantity": 2}
-   - "2 kartony mleka" → {"name": "mleko", "quantity": 2}
-   - "cebula 2 główki" → {"name": "cebula", "quantity": 2}
-
-3. Zamień dopełniacz na mianownik:
-   - "sera" → "ser", "mleka" → "mleko", "cebuli" → "cebula"
-
-4. Rozdzielaj po przecinkach i kropkach.
-
-PRZYKŁAD:
-Input: "mleko razy 2, ser żółty razy 1, 300 gramów. kawa 1 kilogram ziernista. cebula 2 główki."
-Output: {"items": [
-  {"name": "mleko", "quantity": 2},
-  {"name": "ser żółty 300g", "quantity": 1},
-  {"name": "kawa ziernista 1kg", "quantity": 1},
-  {"name": "cebula", "quantity": 2}
-]}`;
+    const systemPrompt = this.buildListParsingPrompt();
 
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -478,38 +525,54 @@ Output: {"items": [
     throw new Error('Invalid AI response format');
   }
 
-  // Use AI to detect intent when heuristics fail
+  // Build i18n-aware intent detection prompt
+  private buildIntentDetectionPrompt(): string {
+    const prompts = getPrompts();
+    const shopping = prompts.shopping as Record<string, unknown>;
+    const intentTypes = shopping.intentTypes as Record<string, string> | undefined;
+    const intentRules = shopping.intentRules as Record<string, string> | undefined;
+    const voicePatterns = shopping.voicePatterns as Record<string, string> | undefined;
+    const intentExamples = shopping.intentExamples as Record<string, string> | undefined;
+
+    let prompt = `${shopping.intentDetection || 'Recognize user intent. Reply ONLY with JSON without additional text.'}\n\n`;
+
+    if (intentTypes) {
+      prompt += 'INTENTS:\n';
+      Object.values(intentTypes).forEach((desc, idx) => {
+        prompt += `${idx + 1}. ${desc}\n`;
+      });
+      prompt += '\n';
+    }
+
+    if (intentRules) {
+      prompt += 'RULES:\n';
+      Object.values(intentRules).forEach((rule) => {
+        prompt += `- ${rule}\n`;
+      });
+      prompt += '\n';
+    }
+
+    if (voicePatterns) {
+      prompt += 'VOICE PATTERNS:\n';
+      Object.values(voicePatterns).forEach((pattern) => {
+        prompt += `- ${pattern}\n`;
+      });
+      prompt += '\n';
+    }
+
+    if (intentExamples) {
+      prompt += 'EXAMPLES:\n';
+      Object.values(intentExamples).forEach((example) => {
+        prompt += `${example}\n`;
+      });
+    }
+
+    return prompt;
+  }
+
+  // Use AI to detect intent when heuristics fail - language-aware
   private async detectIntentWithAI(text: string): Promise<MessageIntent> {
-    const systemPrompt = `Rozpoznaj intencję użytkownika. Odpowiedz TYLKO JSON bez dodatkowego tekstu.
-
-INTENCJE:
-1. add_to_list - dodać do listy zakupów (produkty do kupienia)
-2. expense - zarejestrować wydatek (jest kwota/cena lub sklep z ceną)
-3. query - zapytanie o statystyki
-4. unknown - nie pasuje do żadnej
-
-ZASADY:
-- Jeśli jest kwota/cena (np. "50zł", "15.99") → expense
-- Jeśli "kupić", "potrzebujemy", "dodaj", "lista", "zakupy" → add_to_list
-- "mleko x3" lub "3x mleko" → add_to_list z quantity=3
-- "mleko lidl 5zł" → expense (jest cena I sklep)
-- WAŻNE: Lista produktów BEZ ceny = add_to_list (np. "mleko, chleb, ser")
-- "ile wydałem", "pokaż statystyki" → query
-
-POLSKIE WZORCE GŁOSOWE:
-- "razy 2" / "2 razy" = quantity 2 (np. "mleko razy 2" → mleko x2)
-- "300 gramów X" / "X 300g" = nazwa z jednostką (np. "ser 300g", qty=1)
-- "1 kilogram X" / "X 1kg" = nazwa z jednostką (np. "kawa 1kg", qty=1)
-- "2 główki X" = quantity 2 (np. "cebula" x2)
-- "3 kartony X" = quantity 3 (np. "mleko" x3)
-
-PRZYKŁADY:
-"kupić mleko i chleb" → {"intent": "add_to_list", "items": [{"name": "mleko", "quantity": 1}, {"name": "chleb", "quantity": 1}]}
-"mleko 5zł biedronka" → {"intent": "expense"}
-"mleko razy 2, ser 300g, kawa 1kg" → {"intent": "add_to_list", "items": [{"name": "mleko", "quantity": 2}, {"name": "ser 300g", "quantity": 1}, {"name": "kawa 1kg", "quantity": 1}]}
-"cebula 2 główki" → {"intent": "add_to_list", "items": [{"name": "cebula", "quantity": 2}]}
-"ile wydałem w tym miesiącu" → {"intent": "query"}
-"ser żółty, masło, jajka" → {"intent": "add_to_list", "items": [{"name": "ser żółty", "quantity": 1}, {"name": "masło", "quantity": 1}, {"name": "jajka", "quantity": 1}]}`;
+    const systemPrompt = this.buildIntentDetectionPrompt();
 
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -567,17 +630,14 @@ PRZYKŁADY:
   // Use AI to categorize product into shop category
   private async categorizeWithAI(productName: string): Promise<ShopCategory> {
     const categories = SHOP_CATEGORIES.join(', ');
+    const prompts = getPrompts();
+    const shopping = prompts.shopping as Record<string, string>;
 
-    const systemPrompt = `Przypisz produkt do kategorii sklepowej. Odpowiedz TYLKO nazwą kategorii.
+    const systemPrompt = `${shopping.categorization}
 
 KATEGORIE: ${categories}
 
-ZASADY:
-- Produkty spożywcze → odpowiednia kategoria (Nabiał, Pieczywo, Mięso, etc.)
-- Środki czystości → Chemia
-- Kosmetyki, kremy → Kosmetyki
-- Karma, żwirek → Dla zwierząt
-- Nieznane → Inne`;
+${shopping.categoryRules}`;
 
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',

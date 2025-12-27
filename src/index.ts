@@ -1,10 +1,15 @@
 import { createApp } from './app.ts';
-import { getEnv, getDatabaseUrl } from './config/env.ts';
+import { initConfig, getDatabaseUrl } from './config/index.ts';
+import { initI18n } from './i18n/index.ts';
 import { DatabaseService } from './services/database.service.ts';
 import { Cron } from 'croner';
 
-// Load environment
-const env = getEnv();
+// Initialize and validate config (fail-fast)
+const config = initConfig();
+const env = config.env;
+
+// Initialize i18n with configured language
+initI18n();
 
 // Ensure database exists before starting
 await DatabaseService.ensureDatabaseExists(getDatabaseUrl());

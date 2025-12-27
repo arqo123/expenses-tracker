@@ -2,6 +2,7 @@ import { CircuitBreaker } from '../utils/circuit-breaker.ts';
 import { getEnv } from '../config/env.ts';
 import { EXPENSE_CATEGORIES } from '../types/expense.types.ts';
 import type { ParsedNLPQuery, DateRange } from '../types/nlp-query.types.ts';
+import { getPrompts, getAllCategories } from '../i18n/index.ts';
 
 interface NLPQueryConfig {
   primaryModel: string;
@@ -38,7 +39,9 @@ export class NLPQueryService {
 
   async parseQuery(userQuery: string): Promise<ParsedNLPQuery> {
     const systemPrompt = this.buildSystemPrompt();
-    const userMessage = `Przeanalizuj zapytanie: "${userQuery}"`;
+    const prompts = getPrompts();
+    const nlp = prompts.nlp as { userMessage: string; [key: string]: unknown };
+    const userMessage = nlp.userMessage.replace('{query}', userQuery);
 
     // Try primary model if circuit is closed
     if (this.circuitBreaker.isAllowed()) {
@@ -73,158 +76,112 @@ export class NLPQueryService {
   }
 
   private buildSystemPrompt(): string {
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0] ?? '';
     const currentYear = new Date().getFullYear();
     const currentMonth = new Date().getMonth() + 1;
 
-    const monthNames = [
-      'styczen', 'luty', 'marzec', 'kwiecien', 'maj', 'czerwiec',
-      'lipiec', 'sierpien', 'wrzesien', 'pazdziernik', 'listopad', 'grudzien'
-    ];
-    const currentMonthName = monthNames[currentMonth - 1];
+    const prompts = getPrompts();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const nlp = prompts.nlp as any;
+    const sections = nlp.sections || {};
+    const intents = nlp.intents || {};
+    const relativeDates = nlp.relativeDates || {};
+    const absoluteDates = nlp.absoluteDates || {};
+    const negationExamples = nlp.negationExamples || {};
+    const categoryFilterExamples = nlp.categoryFilterExamples || {};
+    const shopFilterExamples = nlp.shopFilterExamples || {};
+    const amountFilterExamples = nlp.amountFilterExamples || {};
+    const aggregationExamples = nlp.aggregationExamples || {};
+    const datePatterns = nlp.datePatterns || { months: [], weekdays: [] };
+    const outputRules = nlp.outputRules || [];
 
-    return `Jestes parserem zapytan o wydatki. Analizujesz zapytania uzytkownika w JEZYKU POLSKIM i zwracasz ustrukturyzowany JSON.
+    const currentMonthName = datePatterns.months[currentMonth - 1];
+    const categories = getAllCategories();
 
-DZISIEJSZA DATA: ${today}
-BIEZACY ROK: ${currentYear}
-BIEZACY MIESIAC: ${currentMonth} (${currentMonthName})
+    // Helper to replace placeholders
+    const replacePlaceholders = (text: string | undefined): string => {
+      if (!text) return '';
+      return text
+        .replace(/\{today\}/g, today)
+        .replace(/\{year\}/g, String(currentYear))
+        .replace(/\{nextYear\}/g, String(currentYear + 1));
+    };
 
-=== DOSTEPNE KATEGORIE ===
-${EXPENSE_CATEGORIES.join(', ')}
+    let prompt = `${nlp.systemPrompt}\n\n`;
 
-=== TYPY ZAPYTAN (intent) ===
-- "list": lista wydatkow (domyslne gdy nie sprecyzowano)
-- "sum": suma wydatkow ("ile wydalem", "suma", "lacznie")
-- "count": ile transakcji ("ile razy", "ile zakupow")
-- "average": srednia ("srednia", "przecietnie", "srednio")
-- "top": top N wedlug kwoty ("top 5", "5 najwiekszych")
-- "comparison": porownanie (rzadko uzywane)
+    // Date info
+    prompt += `${sections.todayDate}: ${today}\n`;
+    prompt += `${sections.currentYear}: ${currentYear}\n`;
+    prompt += `${sections.currentMonth}: ${currentMonth} (${currentMonthName})\n\n`;
 
-=== PARSOWANIE DAT ===
-Polskie wyrazenia dat - ZAWSZE przelicz na konkretne daty YYYY-MM-DD:
+    // Categories
+    prompt += `=== ${sections.availableCategories} ===\n`;
+    prompt += `${categories.join(', ')}\n\n`;
 
-Relatywne (type: "relative"):
-- "dzisiaj", "dzis" -> start i end = ${today}
-- "wczoraj" -> dzien przed ${today}
-- "przedwczoraj" -> 2 dni przed ${today}
-- "ostatnie 3 dni", "w ostatnich 3 dniach" -> relativeUnit: "days", relativeValue: 3
-- "w tym tygodniu" -> od poniedzialku do ${today}
-- "w zeszlym tygodniu" -> caly poprzedni tydzien
-- "w tym miesiacu" -> od 1 dnia biezacego miesiaca
-- "w zeszlym miesiacu" -> caly poprzedni miesiac
-- "w tym roku" -> od 1 stycznia ${currentYear}
+    // Intents
+    prompt += `=== ${sections.intentTypes} ===\n`;
+    Object.entries(intents).forEach(([key, desc]) => {
+      prompt += `- "${key}": ${desc}\n`;
+    });
+    prompt += '\n';
 
-Absolutne (type: "absolute"):
-- "w grudniu" -> start: "${currentYear}-12-01", end: "${currentYear}-12-31"
-- "w styczniu" -> jezeli jestesmy przed styczniem, to ${currentYear}-01, inaczej ${currentYear + 1}-01
-- "od 1 do 15 grudnia" -> start: "${currentYear}-12-01", end: "${currentYear}-12-15"
-- "miedzy 5 a 10 stycznia" -> start i end z konkretnych dni
-- "w grudniu 2023" -> start: "2023-12-01", end: "2023-12-31"
+    // Date parsing
+    prompt += `=== ${sections.dateParsing} ===\n`;
+    prompt += `${sections.dateParsingNote}:\n\n`;
 
-WAZNE: Jezeli miesiac nie ma podanego roku, uzyj ${currentYear}.
+    prompt += `${datePatterns.relative || 'Relative'}:\n`;
+    Object.values(relativeDates).forEach((example) => {
+      prompt += `- ${replacePlaceholders(String(example))}\n`;
+    });
+    prompt += '\n';
 
-=== NEGACJE (BARDZO WAZNE!) ===
-Rozpoznawaj wykluczenia i mapuj na pole "exclude":
+    prompt += `${datePatterns.absolute || 'Absolute'}:\n`;
+    Object.values(absoluteDates).forEach((example) => {
+      prompt += `- ${replacePlaceholders(String(example))}\n`;
+    });
+    prompt += '\n';
 
-- "bez kategorii elektronika" -> categories.exclude: ["Elektronika"]
-- "bez elektroniki" -> categories.exclude: ["Elektronika"]
-- "oprocz restauracji" -> categories.exclude: ["Restauracje"]
-- "nie liczac transportu" -> categories.exclude: ["Transport"]
-- "wykluczajac zabke" -> shops.exclude: ["Zabka"]
-- "bez sklepu lidl" -> shops.exclude: ["Lidl"]
+    prompt += `${(sections.monthNote || '').replace('{year}', String(currentYear))}\n\n`;
 
-Mozna laczyc wiele wykluczeni:
-- "bez elektroniki i restauracji" -> categories.exclude: ["Elektronika", "Restauracje"]
+    // Negations
+    prompt += `=== ${sections.negations} ===\n`;
+    prompt += `${sections.negationNote}:\n\n`;
+    Object.values(negationExamples).forEach((example) => {
+      prompt += `- ${example}\n`;
+    });
+    prompt += '\n';
 
-=== FILTRY KATEGORII (include) ===
-- "na jedzenie", "jedzenie" -> categories.include: ["Zakupy spozywcze"]
-- "w restauracjach", "restauracje" -> categories.include: ["Restauracje"]
-- "na paliwo" -> categories.include: ["Paliwo"]
-- "na transport" -> categories.include: ["Transport"]
-- "na rozrywke" -> categories.include: ["Rozrywka"]
-- "na subskrypcje" -> categories.include: ["Subskrypcje"]
+    // Category filters
+    prompt += `=== ${sections.categoryFilters} ===\n`;
+    Object.values(categoryFilterExamples).forEach((example) => {
+      prompt += `- ${example}\n`;
+    });
+    prompt += '\n';
 
-=== FILTRY SKLEPOW ===
-- "w biedronce", "u biedronki" -> shops.include: ["Biedronka"]
-- "w lidlu" -> shops.include: ["Lidl"]
-- "na orlenie" -> shops.include: ["Orlen"]
+    // Shop filters
+    prompt += `=== ${sections.shopFilters} ===\n`;
+    Object.values(shopFilterExamples).forEach((example) => {
+      prompt += `- ${example}\n`;
+    });
+    prompt += '\n';
 
-=== FILTRY KWOT ===
-- "powyzej 50zl", "za wiecej niz 50" -> amountFilter.min: 50
-- "ponizej 100zl", "do 100", "maksymalnie 100" -> amountFilter.max: 100
-- "miedzy 20 a 50 zl" -> amountFilter.min: 20, amountFilter.max: 50
-- "dokladnie 25zl" -> amountFilter.exact: 25
+    // Amount filters
+    prompt += `=== ${sections.amountFilters} ===\n`;
+    Object.values(amountFilterExamples).forEach((example) => {
+      prompt += `- ${example}\n`;
+    });
+    prompt += '\n';
 
-=== AGREGACJE ===
-- "top 5 kategorii" -> aggregation.groupBy: "category", aggregation.limit: 5
-- "top 10 sklepow" -> aggregation.groupBy: "shop", aggregation.limit: 10
-- "pogrupuj po kategoriach" -> aggregation.groupBy: "category"
-- "po sklepach" -> aggregation.groupBy: "shop"
-- "po dniach" -> aggregation.groupBy: "day"
-- "po miesiacach" -> aggregation.groupBy: "month"
+    // Aggregations
+    prompt += `=== ${sections.aggregations} ===\n`;
+    Object.values(aggregationExamples).forEach((example) => {
+      prompt += `- ${example}\n`;
+    });
+    prompt += '\n';
 
-=== PRZYKLADY PARSEOWANIA ===
-
-Zapytanie: "ile wydalem w grudniu"
-{
-  "intent": "sum",
-  "dateRange": {
-    "type": "absolute",
-    "start": "${currentYear}-12-01",
-    "end": "${currentYear}-12-31",
-    "description": "grudzien ${currentYear}"
-  },
-  "confidence": 0.95
-}
-
-Zapytanie: "suma bez elektroniki w tym miesiacu"
-{
-  "intent": "sum",
-  "dateRange": {
-    "type": "absolute",
-    "start": "${currentYear}-${String(currentMonth).padStart(2, '0')}-01",
-    "end": "${today}",
-    "description": "biezacy miesiac"
-  },
-  "categories": {
-    "exclude": ["Elektronika"]
-  },
-  "confidence": 0.9
-}
-
-Zapytanie: "top 5 kategorii od 1 do 15 grudnia"
-{
-  "intent": "top",
-  "dateRange": {
-    "type": "absolute",
-    "start": "${currentYear}-12-01",
-    "end": "${currentYear}-12-15",
-    "description": "od 1 do 15 grudnia"
-  },
-  "aggregation": {
-    "groupBy": "category",
-    "limit": 5,
-    "orderBy": "amount",
-    "orderDirection": "desc"
-  },
-  "confidence": 0.95
-}
-
-Zapytanie: "wydatki w biedronce powyzej 50zl"
-{
-  "intent": "list",
-  "shops": {
-    "include": ["Biedronka"]
-  },
-  "amountFilter": {
-    "min": 50
-  },
-  "confidence": 0.9
-}
-
-=== OUTPUT FORMAT ===
-Zwroc TYLKO valid JSON (bez markdown, bez dodatkowego tekstu):
-{
+    // Output format (static JSON schema)
+    prompt += `=== ${sections.outputFormat} ===\n`;
+    prompt += `{
   "intent": "sum|list|count|average|top|comparison",
   "dateRange": {
     "type": "absolute|relative",
@@ -232,37 +189,22 @@ Zwroc TYLKO valid JSON (bez markdown, bez dodatkowego tekstu):
     "end": "YYYY-MM-DD",
     "relativeUnit": "days|weeks|months|years",
     "relativeValue": number,
-    "description": "opis slowny"
+    "description": "string"
   },
-  "categories": {
-    "include": ["Kategoria1"],
-    "exclude": ["Kategoria2"]
-  },
-  "shops": {
-    "include": ["Sklep1"],
-    "exclude": ["Sklep2"]
-  },
-  "amountFilter": {
-    "min": number,
-    "max": number,
-    "exact": number
-  },
-  "aggregation": {
-    "type": "sum|count|average",
-    "groupBy": "category|shop|day|week|month",
-    "limit": number,
-    "orderBy": "amount|count|date",
-    "orderDirection": "asc|desc"
-  },
+  "categories": { "include": ["..."], "exclude": ["..."] },
+  "shops": { "include": ["..."], "exclude": ["..."] },
+  "amountFilter": { "min": number, "max": number, "exact": number },
+  "aggregation": { "groupBy": "category|shop|day|week|month", "limit": number },
   "confidence": 0.0-1.0
-}
+}\n\n`;
 
-WAZNE:
-- Zwracaj TYLKO valid JSON
-- Pomijaj puste pola (nie uzywaj null)
-- Dla niejasnych zapytan uzyj niskiej confidence (< 0.5)
-- Domyslny intent to "list" jezeli nie sprecyzowano
-- Zawsze dodawaj "description" w dateRange`;
+    // Important rules
+    prompt += `${sections.important}:\n`;
+    outputRules.forEach((rule: string) => {
+      prompt += `- ${rule}\n`;
+    });
+
+    return prompt;
   }
 
   private async callOpenRouter(
@@ -399,6 +341,8 @@ WAZNE:
     // Default to current month list
     const now = new Date();
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    const prompts = getPrompts();
+    const nlp = prompts.nlp as { defaultDescription: string; [key: string]: unknown };
 
     return {
       intent: 'list',
@@ -406,7 +350,7 @@ WAZNE:
         type: 'absolute',
         start: firstDay.toISOString().split('T')[0],
         end: now.toISOString().split('T')[0],
-        description: 'biezacy miesiac',
+        description: nlp.defaultDescription,
       },
       confidence: 0.3,
       originalQuery,

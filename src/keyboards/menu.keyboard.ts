@@ -1,5 +1,6 @@
 import type { InlineKeyboardMarkup } from '../types/telegram.types.ts';
 import { EXPENSE_CATEGORIES, CATEGORY_EMOJI } from '../types/expense.types.ts';
+import { t } from '../i18n/index.ts';
 
 type InlineButton = { text: string; callback_data: string };
 type InlineRow = InlineButton[];
@@ -12,7 +13,7 @@ function buildKeyboard(rows: InlineRow[]): InlineKeyboardMarkup {
 // Back button helper
 function backButton(section?: string): InlineButton {
   return {
-    text: '⬅️ Powrot',
+    text: `⬅️ ${t('ui.buttons.back')}`,
     callback_data: section ? `menu:back:${section}` : 'menu:main',
   };
 }
@@ -20,13 +21,13 @@ function backButton(section?: string): InlineButton {
 // ==================== MAIN MENU ====================
 export function mainMenuKeyboard(): InlineKeyboardMarkup {
   return buildKeyboard([
-    [{ text: '🛒 Lista zakupow', callback_data: 'list:main' }],
-    [{ text: '📅 Raporty czasowe', callback_data: 'menu:time' }],
-    [{ text: '📁 Kategorie', callback_data: 'menu:cat' }],
-    [{ text: '🏪 Sklepy', callback_data: 'menu:shop' }],
-    [{ text: '👥 Porownanie', callback_data: 'menu:users' }],
-    [{ text: '📈 Trendy', callback_data: 'menu:trends' }],
-    [{ text: '🔍 Wyszukiwanie', callback_data: 'menu:search' }],
+    [{ text: `🛒 ${t('ui.buttons.shoppingList')}`, callback_data: 'list:main' }],
+    [{ text: `📅 ${t('ui.buttons.timeReports')}`, callback_data: 'menu:time' }],
+    [{ text: `📁 ${t('ui.buttons.categories')}`, callback_data: 'menu:cat' }],
+    [{ text: `🏪 ${t('ui.buttons.shops')}`, callback_data: 'menu:shop' }],
+    [{ text: `👥 ${t('ui.buttons.comparison')}`, callback_data: 'menu:users' }],
+    [{ text: `📈 ${t('ui.buttons.trends')}`, callback_data: 'menu:trends' }],
+    [{ text: `🔍 ${t('ui.buttons.search')}`, callback_data: 'menu:search' }],
   ]);
 }
 
@@ -34,20 +35,20 @@ export function mainMenuKeyboard(): InlineKeyboardMarkup {
 export function timeMenuKeyboard(): InlineKeyboardMarkup {
   return buildKeyboard([
     [
-      { text: '📆 Dzisiaj', callback_data: 'menu:time:today' },
-      { text: '📆 Wczoraj', callback_data: 'menu:time:yesterday' },
+      { text: `📆 ${t('ui.periods.today')}`, callback_data: 'menu:time:today' },
+      { text: `📆 ${t('ui.periods.yesterday')}`, callback_data: 'menu:time:yesterday' },
     ],
     [
-      { text: '📆 Ten tydzien', callback_data: 'menu:time:week' },
-      { text: '📆 Zeszly tydzien', callback_data: 'menu:time:lastweek' },
+      { text: `📆 ${t('ui.periods.thisWeek')}`, callback_data: 'menu:time:week' },
+      { text: `📆 ${t('ui.periods.lastWeek')}`, callback_data: 'menu:time:lastweek' },
     ],
     [
-      { text: '📆 Ten miesiac', callback_data: 'menu:time:month' },
-      { text: '📆 Zeszly miesiac', callback_data: 'menu:time:lastmonth' },
+      { text: `📆 ${t('ui.periods.thisMonth')}`, callback_data: 'menu:time:month' },
+      { text: `📆 ${t('ui.periods.lastMonth')}`, callback_data: 'menu:time:lastmonth' },
     ],
     [
-      { text: '📆 Ten rok', callback_data: 'menu:time:year' },
-      { text: '📆 Ostatnie 30 dni', callback_data: 'menu:time:30days' },
+      { text: `📆 ${t('ui.periods.thisYear')}`, callback_data: 'menu:time:year' },
+      { text: `📆 ${t('ui.periods.last30Days')}`, callback_data: 'menu:time:30days' },
     ],
     [backButton()],
   ]);
@@ -55,10 +56,10 @@ export function timeMenuKeyboard(): InlineKeyboardMarkup {
 
 export function timeDetailsKeyboard(period: string): InlineKeyboardMarkup {
   return buildKeyboard([
-    [{ text: '📊 Podzial na kategorie', callback_data: `menu:time:cat:${period}` }],
-    [{ text: '🏪 Top sklepy', callback_data: `menu:time:shop:${period}` }],
-    [{ text: '📋 Lista transakcji', callback_data: `menu:time:list:${period}` }],
-    [{ text: '📉 Porownaj z poprzednim', callback_data: `menu:time:compare:${period}` }],
+    [{ text: `📊 ${t('ui.menu.categoryBreakdown')}`, callback_data: `menu:time:cat:${period}` }],
+    [{ text: `🏪 ${t('ui.menu.topShopsInPeriod')}`, callback_data: `menu:time:shop:${period}` }],
+    [{ text: `📋 ${t('ui.menu.transactionList')}`, callback_data: `menu:time:list:${period}` }],
+    [{ text: `📉 ${t('ui.menu.compareWithPrevious')}`, callback_data: `menu:time:compare:${period}` }],
     [backButton('time')],
   ]);
 }
@@ -66,10 +67,10 @@ export function timeDetailsKeyboard(period: string): InlineKeyboardMarkup {
 // ==================== CATEGORIES ====================
 export function categoryMenuKeyboard(): InlineKeyboardMarkup {
   return buildKeyboard([
-    [{ text: '🏆 Top 5 kategorii', callback_data: 'menu:cat:top5' }],
-    [{ text: '🏆 Top 10 kategorii', callback_data: 'menu:cat:top10' }],
-    [{ text: '📊 Wszystkie kategorie', callback_data: 'menu:cat:all' }],
-    [{ text: '🔎 Wybierz kategorie...', callback_data: 'menu:cat:select:0' }],
+    [{ text: `🏆 ${t('ui.menu.top5Categories')}`, callback_data: 'menu:cat:top5' }],
+    [{ text: `🏆 ${t('ui.menu.top10Categories')}`, callback_data: 'menu:cat:top10' }],
+    [{ text: `📊 ${t('ui.menu.allCategories')}`, callback_data: 'menu:cat:all' }],
+    [{ text: `🔎 ${t('ui.menu.selectCategoryDots')}`, callback_data: 'menu:cat:select:0' }],
     [backButton()],
   ]);
 }
@@ -99,10 +100,10 @@ export function categorySelectKeyboard(page: number = 0): InlineKeyboardMarkup {
   // Pagination
   const navRow: InlineRow = [];
   if (page > 0) {
-    navRow.push({ text: '⬅️ Poprzednie', callback_data: `menu:cat:select:${page - 1}` });
+    navRow.push({ text: `⬅️ ${t('ui.buttons.previous')}`, callback_data: `menu:cat:select:${page - 1}` });
   }
   if (start + pageSize < EXPENSE_CATEGORIES.length) {
-    navRow.push({ text: 'Nastepne ➡️', callback_data: `menu:cat:select:${page + 1}` });
+    navRow.push({ text: `${t('ui.buttons.next')} ➡️`, callback_data: `menu:cat:select:${page + 1}` });
   }
   if (navRow.length > 0) {
     rows.push(navRow);
@@ -115,10 +116,10 @@ export function categorySelectKeyboard(page: number = 0): InlineKeyboardMarkup {
 
 export function categoryViewKeyboard(category: string, period: string = 'month'): InlineKeyboardMarkup {
   return buildKeyboard([
-    [{ text: '📆 Zmien okres', callback_data: `menu:cat:period:${category}` }],
-    [{ text: '🏪 Top sklepy w kategorii', callback_data: `menu:cat:shops:${category}:${period}` }],
-    [{ text: '📋 Pokaz transakcje', callback_data: `menu:cat:list:${category}:${period}` }],
-    [{ text: '📉 Trend (wykres)', callback_data: `menu:cat:trend:${category}` }],
+    [{ text: `📆 ${t('ui.menu.changePeriod')}`, callback_data: `menu:cat:period:${category}` }],
+    [{ text: `🏪 ${t('ui.menu.topShopsInCategory')}`, callback_data: `menu:cat:shops:${category}:${period}` }],
+    [{ text: `📋 ${t('ui.menu.showTransactions')}`, callback_data: `menu:cat:list:${category}:${period}` }],
+    [{ text: `📉 ${t('ui.menu.trendChart')}`, callback_data: `menu:cat:trend:${category}` }],
     [backButton('cat')],
   ]);
 }
@@ -126,18 +127,18 @@ export function categoryViewKeyboard(category: string, period: string = 'month')
 // ==================== SHOPS ====================
 export function shopMenuKeyboard(): InlineKeyboardMarkup {
   return buildKeyboard([
-    [{ text: '🏆 Top 5 sklepow', callback_data: 'menu:shop:top5' }],
-    [{ text: '🏆 Top 10 sklepow', callback_data: 'menu:shop:top10' }],
-    [{ text: '🏆 Top 20 sklepow', callback_data: 'menu:shop:top20' }],
+    [{ text: `🏆 ${t('ui.menu.top5Shops')}`, callback_data: 'menu:shop:top5' }],
+    [{ text: `🏆 ${t('ui.menu.top10Shops')}`, callback_data: 'menu:shop:top10' }],
+    [{ text: `🏆 ${t('ui.menu.top20Shops')}`, callback_data: 'menu:shop:top20' }],
     [backButton()],
   ]);
 }
 
 export function shopViewKeyboard(shop: string): InlineKeyboardMarkup {
   return buildKeyboard([
-    [{ text: '📆 Zmien okres', callback_data: `menu:shop:period:${shop}` }],
-    [{ text: '📋 Pokaz transakcje', callback_data: `menu:shop:list:${shop}` }],
-    [{ text: '📈 Historia wizyt', callback_data: `menu:shop:history:${shop}` }],
+    [{ text: `📆 ${t('ui.menu.changePeriod')}`, callback_data: `menu:shop:period:${shop}` }],
+    [{ text: `📋 ${t('ui.menu.showTransactions')}`, callback_data: `menu:shop:list:${shop}` }],
+    [{ text: `📈 ${t('ui.menu.visitHistory')}`, callback_data: `menu:shop:history:${shop}` }],
     [backButton('shop')],
   ]);
 }
@@ -145,9 +146,9 @@ export function shopViewKeyboard(shop: string): InlineKeyboardMarkup {
 // ==================== USERS COMPARISON ====================
 export function usersMenuKeyboard(period: string = 'month'): InlineKeyboardMarkup {
   return buildKeyboard([
-    [{ text: '📆 Zmien okres', callback_data: 'menu:users:period' }],
-    [{ text: '📁 Porownaj kategorie', callback_data: `menu:users:cat:${period}` }],
-    [{ text: '📊 Szczegolowe porownanie', callback_data: `menu:users:details:${period}` }],
+    [{ text: `📆 ${t('ui.menu.changePeriod')}`, callback_data: 'menu:users:period' }],
+    [{ text: `📁 ${t('ui.menu.compareCategories')}`, callback_data: `menu:users:cat:${period}` }],
+    [{ text: `📊 ${t('ui.menu.detailedComparison')}`, callback_data: `menu:users:details:${period}` }],
     [backButton()],
   ]);
 }
@@ -155,15 +156,15 @@ export function usersMenuKeyboard(period: string = 'month'): InlineKeyboardMarku
 export function usersPeriodKeyboard(): InlineKeyboardMarkup {
   return buildKeyboard([
     [
-      { text: '📆 Dzisiaj', callback_data: 'menu:users:show:today' },
-      { text: '📆 Ten tydzien', callback_data: 'menu:users:show:week' },
+      { text: `📆 ${t('ui.periods.today')}`, callback_data: 'menu:users:show:today' },
+      { text: `📆 ${t('ui.periods.thisWeek')}`, callback_data: 'menu:users:show:week' },
     ],
     [
-      { text: '📆 Ten miesiac', callback_data: 'menu:users:show:month' },
-      { text: '📆 Zeszly miesiac', callback_data: 'menu:users:show:lastmonth' },
+      { text: `📆 ${t('ui.periods.thisMonth')}`, callback_data: 'menu:users:show:month' },
+      { text: `📆 ${t('ui.periods.lastMonth')}`, callback_data: 'menu:users:show:lastmonth' },
     ],
     [
-      { text: '📆 Ten rok', callback_data: 'menu:users:show:year' },
+      { text: `📆 ${t('ui.periods.thisYear')}`, callback_data: 'menu:users:show:year' },
     ],
     [backButton('users')],
   ]);
@@ -172,10 +173,10 @@ export function usersPeriodKeyboard(): InlineKeyboardMarkup {
 // ==================== TRENDS ====================
 export function trendsMenuKeyboard(): InlineKeyboardMarkup {
   return buildKeyboard([
-    [{ text: '📉 Trend wydatkow (6 mies.)', callback_data: 'menu:trends:6m' }],
-    [{ text: '📊 Porownanie miesiecy', callback_data: 'menu:trends:months' }],
-    [{ text: '🎯 Srednie dzienne', callback_data: 'menu:trends:daily' }],
-    [{ text: '📆 Wydatki wg dnia tygodnia', callback_data: 'menu:trends:weekday' }],
+    [{ text: `📉 ${t('ui.menu.expenseTrend6m')}`, callback_data: 'menu:trends:6m' }],
+    [{ text: `📊 ${t('ui.menu.compareMonths')}`, callback_data: 'menu:trends:months' }],
+    [{ text: `🎯 ${t('ui.menu.dailyAverages')}`, callback_data: 'menu:trends:daily' }],
+    [{ text: `📆 ${t('ui.menu.expensesByWeekday')}`, callback_data: 'menu:trends:weekday' }],
     [backButton()],
   ]);
 }
@@ -183,11 +184,11 @@ export function trendsMenuKeyboard(): InlineKeyboardMarkup {
 // ==================== SEARCH ====================
 export function searchMenuKeyboard(): InlineKeyboardMarkup {
   return buildKeyboard([
-    [{ text: '💰 Powyzej 100 zl', callback_data: 'menu:search:above:100' }],
-    [{ text: '💰 Powyzej 500 zl', callback_data: 'menu:search:above:500' }],
-    [{ text: '📊 Ostatnie 10 wydatkow', callback_data: 'menu:search:last:10' }],
-    [{ text: '📊 Ostatnie 20 wydatkow', callback_data: 'menu:search:last:20' }],
-    [{ text: '📊 Ostatnie 50 wydatkow', callback_data: 'menu:search:last:50' }],
+    [{ text: `💰 ${t('ui.menu.above100')}`, callback_data: 'menu:search:above:100' }],
+    [{ text: `💰 ${t('ui.menu.above500')}`, callback_data: 'menu:search:above:500' }],
+    [{ text: `📊 ${t('ui.menu.last10Expenses')}`, callback_data: 'menu:search:last:10' }],
+    [{ text: `📊 ${t('ui.menu.last20Expenses')}`, callback_data: 'menu:search:last:20' }],
+    [{ text: `📊 ${t('ui.menu.last50Expenses')}`, callback_data: 'menu:search:last:50' }],
     [backButton()],
   ]);
 }
@@ -196,16 +197,16 @@ export function searchMenuKeyboard(): InlineKeyboardMarkup {
 export function periodSelectKeyboard(returnAction: string): InlineKeyboardMarkup {
   return buildKeyboard([
     [
-      { text: '📆 Dzisiaj', callback_data: `${returnAction}:today` },
-      { text: '📆 Wczoraj', callback_data: `${returnAction}:yesterday` },
+      { text: `📆 ${t('ui.periods.today')}`, callback_data: `${returnAction}:today` },
+      { text: `📆 ${t('ui.periods.yesterday')}`, callback_data: `${returnAction}:yesterday` },
     ],
     [
-      { text: '📆 Ten tydzien', callback_data: `${returnAction}:week` },
-      { text: '📆 Ten miesiac', callback_data: `${returnAction}:month` },
+      { text: `📆 ${t('ui.periods.thisWeek')}`, callback_data: `${returnAction}:week` },
+      { text: `📆 ${t('ui.periods.thisMonth')}`, callback_data: `${returnAction}:month` },
     ],
     [
-      { text: '📆 Zeszly miesiac', callback_data: `${returnAction}:lastmonth` },
-      { text: '📆 Ten rok', callback_data: `${returnAction}:year` },
+      { text: `📆 ${t('ui.periods.lastMonth')}`, callback_data: `${returnAction}:lastmonth` },
+      { text: `📆 ${t('ui.periods.thisYear')}`, callback_data: `${returnAction}:year` },
     ],
     [backButton()],
   ]);

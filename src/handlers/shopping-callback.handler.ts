@@ -9,6 +9,7 @@ import {
 } from '../keyboards/shopping.keyboard.ts';
 import { showShoppingList, showSuggestions } from './shopping.handler.ts';
 import { getUserName } from './webhook.handler.ts';
+import { t, getProductWord } from '../i18n/index.ts';
 
 export async function shoppingCallbackHandler(
   c: Context,
@@ -26,7 +27,7 @@ export async function shoppingCallbackHandler(
   );
 
   if (!chatId || !messageId) {
-    await telegram.answerCallbackQuery(callbackQuery.id, 'Blad: brak danych');
+    await telegram.answerCallbackQuery(callbackQuery.id, `${t('ui.errors.error')}: ${t('ui.errors.invalidData')}`);
     return c.json({ ok: false });
   }
 
@@ -45,13 +46,13 @@ export async function shoppingCallbackHandler(
       case 'main': {
         const itemCount = await shoppingDb.getItemCount();
 
-        let msg = '🛒 *LISTA ZAKUPOW*\n\n';
+        let msg = `🛒 *${t('ui.shopping.listTitle')}*\n\n`;
         if (itemCount > 0) {
-          msg += `📋 ${itemCount} ${getProductWord(itemCount)} do kupienia\n`;
+          msg += `📋 ${t('ui.shopping.productsToBuy', { count: itemCount, word: getProductWord(itemCount) })}\n`;
         } else {
-          msg += '📋 Lista jest pusta\n';
+          msg += `📋 ${t('ui.shopping.emptyList')}\n`;
         }
-        msg += '👥 Wspolna lista\n';
+        msg += `👥 ${t('ui.shopping.sharedList')}\n`;
 
         await telegram.editMessage(chatId, messageId, msg, 'Markdown', shoppingMainKeyboard());
         await telegram.answerCallbackQuery(callbackQuery.id);
@@ -70,12 +71,9 @@ export async function shoppingCallbackHandler(
         if (param1 === 'prompt') {
           // Show instruction to add
           const msg =
-            '➕ *DODAJ PRODUKT*\n\n' +
-            'Napisz co chcesz dodac, np.:\n' +
-            '• _mleko i chleb_\n' +
-            '• _ser x3_\n' +
-            '• _kupic banany_\n\n' +
-            'Mozesz tez nagrac wiadomosc glosowa!';
+            `➕ *${t('ui.shopping.addProductInstruction')}*\n\n` +
+            `${t('ui.shopping.addExamples')}\n\n` +
+            `${t('ui.shopping.voiceHint')}`;
 
           await telegram.editMessage(chatId, messageId, msg, 'Markdown', shoppingListEmptyKeyboard());
           await telegram.answerCallbackQuery(callbackQuery.id);
@@ -85,7 +83,7 @@ export async function shoppingCallbackHandler(
           const category = await shoppingAI.categorizeProduct(productName);
           await shoppingDb.addItem(productName, 1, userName, category);
 
-          await telegram.answerCallbackQuery(callbackQuery.id, `Dodano: ${productName}`);
+          await telegram.answerCallbackQuery(callbackQuery.id, `${t('ui.buttons.add')}: ${productName}`);
           await showShoppingList(c, chatId, messageId);
         } else if (param1 === 'all') {
           // Add all suggestions
@@ -98,7 +96,7 @@ export async function shoppingCallbackHandler(
             addedCount++;
           }
 
-          await telegram.answerCallbackQuery(callbackQuery.id, `Dodano ${addedCount} produktow`);
+          await telegram.answerCallbackQuery(callbackQuery.id, t('ui.shopping.addedProducts', { count: addedCount }));
           await showShoppingList(c, chatId, messageId);
         }
         break;
@@ -115,7 +113,7 @@ export async function shoppingCallbackHandler(
           // Refresh the list (stays on same view)
           await showShoppingList(c, chatId, messageId);
         } else {
-          await telegram.answerCallbackQuery(callbackQuery.id, 'Produkt nie znaleziony');
+          await telegram.answerCallbackQuery(callbackQuery.id, t('ui.errors.productNotFound'));
         }
         break;
       }
@@ -141,7 +139,7 @@ export async function shoppingCallbackHandler(
         const removed = await shoppingDb.removeItem(itemId);
 
         if (removed) {
-          await telegram.answerCallbackQuery(callbackQuery.id, '🗑️ Usunieto');
+          await telegram.answerCallbackQuery(callbackQuery.id, `🗑️ ${t('common.deleted')}`);
         }
         await showShoppingList(c, chatId, messageId);
         break;
@@ -159,18 +157,18 @@ export async function shoppingCallbackHandler(
         if (param1 === 'confirm') {
           const itemCount = await shoppingDb.getItemCount();
           if (itemCount === 0) {
-            await telegram.answerCallbackQuery(callbackQuery.id, 'Lista jest juz pusta');
+            await telegram.answerCallbackQuery(callbackQuery.id, t('ui.errors.listAlreadyEmpty'));
             await showShoppingList(c, chatId, messageId);
           } else {
-            const msg = `🗑️ *Czy na pewno chcesz wyczyścić listę?*\n\nUsuniesz ${itemCount} ${getProductWord(itemCount)}`;
+            const msg = `🗑️ *${t('ui.shopping.clearConfirm', { count: itemCount, word: getProductWord(itemCount) })}*`;
             await telegram.editMessage(chatId, messageId, msg, 'Markdown', confirmClearKeyboard());
             await telegram.answerCallbackQuery(callbackQuery.id);
           }
         } else if (param1 === 'yes') {
           const count = await shoppingDb.clearAllItems();
-          await telegram.answerCallbackQuery(callbackQuery.id, `Wyczyszczono ${count} produktow`);
+          await telegram.answerCallbackQuery(callbackQuery.id, t('ui.shopping.cleared', { count }));
 
-          const msg = '✅ Lista zostala wyczyszczona!';
+          const msg = `✅ ${t('ui.shopping.listCleared')}`;
           await telegram.editMessage(chatId, messageId, msg, 'Markdown', shoppingMainKeyboard());
         }
         break;
@@ -182,13 +180,13 @@ export async function shoppingCallbackHandler(
           // Go back to shopping main menu
           const itemCount = await shoppingDb.getItemCount();
 
-          let msg = '🛒 *LISTA ZAKUPOW*\n\n';
+          let msg = `🛒 *${t('ui.shopping.listTitle')}*\n\n`;
           if (itemCount > 0) {
-            msg += `📋 ${itemCount} ${getProductWord(itemCount)} do kupienia\n`;
+            msg += `📋 ${t('ui.shopping.productsToBuy', { count: itemCount, word: getProductWord(itemCount) })}\n`;
           } else {
-            msg += '📋 Lista jest pusta\n';
+            msg += `📋 ${t('ui.shopping.emptyList')}\n`;
           }
-          msg += '👥 Wspolna lista\n';
+          msg += `👥 ${t('ui.shopping.sharedList')}\n`;
 
           await telegram.editMessage(chatId, messageId, msg, 'Markdown', shoppingMainKeyboard());
           await telegram.answerCallbackQuery(callbackQuery.id);
@@ -197,21 +195,14 @@ export async function shoppingCallbackHandler(
       }
 
       default: {
-        await telegram.answerCallbackQuery(callbackQuery.id, 'Nieznana akcja');
+        await telegram.answerCallbackQuery(callbackQuery.id, t('ui.errors.unknownAction'));
       }
     }
 
     return c.json({ ok: true });
   } catch (error) {
     console.error('[ShoppingCallback] Error:', error);
-    await telegram.answerCallbackQuery(callbackQuery.id, 'Wystapil blad');
+    await telegram.answerCallbackQuery(callbackQuery.id, t('ui.errors.shoppingError'));
     return c.json({ ok: false });
   }
-}
-
-// Helper: Polish word forms for "produkt"
-function getProductWord(count: number): string {
-  if (count === 1) return 'produkt';
-  if (count >= 2 && count <= 4) return 'produkty';
-  return 'produktow';
 }

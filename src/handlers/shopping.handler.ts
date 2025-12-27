@@ -12,6 +12,7 @@ import {
 } from '../keyboards/shopping.keyboard.ts';
 import { SHOP_CATEGORY_EMOJI, CATEGORY_ORDER } from '../types/shopping.types.ts';
 import { getUserName } from './webhook.handler.ts';
+import { t, tsc, getProductWord } from '../i18n/index.ts';
 
 // Handle adding items to shopping list (from text/voice message)
 export async function shoppingAddHandler(
@@ -47,7 +48,7 @@ export async function shoppingAddHandler(
       })
       .join('\n');
 
-    const msg = `✅ *Dodano do listy:*\n${itemsList}`;
+    const msg = `✅ *${t('ui.shopping.addedToList')}*\n${itemsList}`;
 
     await telegram.sendMessage({
       chat_id: chatId,
@@ -59,7 +60,7 @@ export async function shoppingAddHandler(
     return c.json({ ok: true });
   } catch (error) {
     console.error('[ShoppingHandler] Error adding items:', error);
-    await telegram.sendError(chatId, 'Blad podczas dodawania do listy.');
+    await telegram.sendError(chatId, t('ui.errors.addToListError'));
     return c.json({ ok: false });
   }
 }
@@ -75,13 +76,13 @@ export async function shoppingCommand(c: Context, message: TelegramMessage): Pro
   try {
     const itemCount = await shoppingDb.getItemCount();
 
-    let msg = '🛒 *LISTA ZAKUPOW*\n\n';
+    let msg = `🛒 *${t('ui.shopping.listTitle')}*\n\n`;
     if (itemCount > 0) {
-      msg += `📋 ${itemCount} ${getProductWord(itemCount)} do kupienia\n`;
+      msg += `📋 ${t('ui.shopping.productsToBuy', { count: itemCount, word: getProductWord(itemCount) })}\n`;
     } else {
-      msg += '📋 Lista jest pusta\n';
+      msg += `📋 ${t('ui.shopping.emptyList')}\n`;
     }
-    msg += '👥 Wspolna lista\n';
+    msg += `👥 ${t('ui.shopping.sharedList')}\n`;
 
     await telegram.sendMessage({
       chat_id: chatId,
@@ -93,7 +94,7 @@ export async function shoppingCommand(c: Context, message: TelegramMessage): Pro
     return c.json({ ok: true });
   } catch (error) {
     console.error('[ShoppingHandler] Error showing menu:', error);
-    await telegram.sendError(chatId, 'Blad podczas otwierania listy.');
+    await telegram.sendError(chatId, t('ui.errors.openListError'));
     return c.json({ ok: false });
   }
 }
@@ -122,11 +123,11 @@ export async function showShoppingList(
     })
   );
 
-  let msg = `🛒 *LISTA ZAKUPOW* (${totalItems})\n\n`;
+  let msg = `🛒 *${t('ui.shopping.listTitle')}* (${totalItems})\n\n`;
 
   if (totalItems === 0) {
-    msg += '_Lista jest pusta_\n\n';
-    msg += '💡 Napisz np. "kup mleko i chleb"';
+    msg += `_${t('ui.shopping.emptyList')}_\n\n`;
+    msg += `💡 ${t('ui.shopping.addExamples').split('\n')[0]}`;
 
     const keyboard = shoppingListEmptyKeyboard();
 
@@ -146,14 +147,15 @@ export async function showShoppingList(
   // Show full product list grouped by category
   for (const [category, items] of sortedGrouped) {
     const categoryEmoji = SHOP_CATEGORY_EMOJI[category] || '📦';
-    msg += `${categoryEmoji} *${category}:*\n`;
+    const translatedCategory = tsc(category);
+    msg += `${categoryEmoji} *${translatedCategory}:*\n`;
     for (const item of items) {
       const qty = item.quantity > 1 ? ` x${item.quantity}` : '';
       msg += `    ∙ ${item.emoji} ${item.name}${qty}\n`;
     }
     msg += '\n';
   }
-  msg += '_Kliknij produkt aby odhaczyc_';
+  msg += `_${t('ui.shopping.clickToCheck')}_`;
 
   const keyboard = shoppingListWithItemButtons(sortedGrouped, page);
 
@@ -191,12 +193,12 @@ export async function showSuggestions(
     }
   }
 
-  let msg = '💡 *PODPOWIEDZI*\n\n';
+  let msg = `💡 *${t('ui.shopping.suggestionsTitle')}*\n\n`;
 
   if (suggestions.length === 0) {
-    msg += '_Brak podpowiedzi - zacznij dodawac zakupy, a system nauczy sie Twoich preferencji_';
+    msg += `_${t('ui.shopping.noSuggestions')}_`;
   } else {
-    msg += 'Na podstawie Twoich zakupow:\n\n';
+    msg += `${t('ui.shopping.basedOnPurchases')}\n\n`;
 
     for (const sugg of suggestions.slice(0, 8)) {
       const days = sugg.daysSinceLastPurchase;
@@ -204,9 +206,9 @@ export async function showSuggestions(
 
       let hint = '';
       if (days && interval && days > interval) {
-        hint = ` _(${days} dni temu, kupujesz co ~${interval} dni)_`;
+        hint = ` _(${t('ui.shopping.daysAgo', { days })}, ${t('ui.shopping.buyEvery', { interval })})_`;
       } else if (days) {
-        hint = ` _(ostatnio ${days} dni temu)_`;
+        hint = ` _(${t('ui.shopping.lastPurchase', { days })})_`;
       }
 
       msg += `• ${sugg.productName}${hint}\n`;
@@ -227,9 +229,3 @@ export async function showSuggestions(
   }
 }
 
-// Helper: Polish word forms for "produkt"
-function getProductWord(count: number): string {
-  if (count === 1) return 'produkt';
-  if (count >= 2 && count <= 4) return 'produkty';
-  return 'produktow';
-}

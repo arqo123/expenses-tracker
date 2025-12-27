@@ -7,6 +7,7 @@ import type {
   MenuButton,
 } from '../types/telegram.types.ts';
 import { CATEGORY_EMOJI, type ExpenseCategory } from '../types/expense.types.ts';
+import { t, formatCurrency, getCommon } from '../i18n/index.ts';
 
 interface CategoryBreakdown {
   count: number;
@@ -54,27 +55,27 @@ export class TelegramService {
   ): Promise<TelegramMessage> {
     const isLowConfidence = confidence < 0.7;
     const emoji = CATEGORY_EMOJI[category] || '❓';
-    const amountStr = amount.toFixed(2).replace('.00', '');
+    const formattedAmount = formatCurrency(amount);
 
     let text: string;
     if (description) {
       // Produkt górą, sklep niżej
-      text = `${emoji} ${description} ${amountStr} zl → ${category}\n📍 ${shop}`;
+      text = `${emoji} ${description} ${formattedAmount} → ${category}\n📍 ${shop}`;
     } else {
       // Fallback: sklep jako główny element
-      text = `${emoji} ${shop} ${amountStr} zl → ${category}`;
+      text = `${emoji} ${shop} ${formattedAmount} → ${category}`;
     }
 
     if (isLowConfidence) {
-      text += '\n_Popraw jesli zle._';
+      text += `\n_${getCommon().correctIfWrong}_`;
     }
 
     const replyMarkup: InlineKeyboardMarkup | undefined = expenseId
       ? {
           inline_keyboard: [
             [
-              { text: '✏️ Zmien', callback_data: `menu:${expenseId}` },
-              { text: '🗑️ Usun', callback_data: `delete:${expenseId}` },
+              { text: `✏️ ${t('ui.buttons.edit')}`, callback_data: `menu:${expenseId}` },
+              { text: `🗑️ ${t('ui.buttons.delete')}`, callback_data: `delete:${expenseId}` },
             ],
           ],
         }
@@ -96,19 +97,19 @@ export class TelegramService {
     categoryBreakdown?: Record<string, CategoryBreakdown>,
     skippedInfo?: string
   ): Promise<TelegramMessage> {
-    let text = `📊 Import CSV zakonczony:
-✅ Utworzono: ${created}
-⏭️ Duplikaty: ${duplicates}
-📋 Lacznie: ${total}`;
+    let text = `📊 ${t('ui.csv.importComplete')}
+✅ ${created}
+⏭️ ${duplicates}
+📋 ${total}`;
 
     // Add skipped info if provided
     if (skippedInfo) {
-      text += `\n🚫 ${skippedInfo}`;
+      text += `\n🚫 ${t('ui.csv.skipped')}: ${skippedInfo}`;
     }
 
     // Add category breakdown if provided
     if (categoryBreakdown && Object.keys(categoryBreakdown).length > 0) {
-      text += '\n\n📁 Kategorie:';
+      text += `\n\n📁 ${t('ui.csv.categoryBreakdown')}`;
 
       // Sort by amount descending
       const sorted = Object.entries(categoryBreakdown)
@@ -116,8 +117,7 @@ export class TelegramService {
 
       for (const [category, data] of sorted) {
         const emoji = CATEGORY_EMOJI[category as ExpenseCategory] || '❓';
-        const amountStr = data.amount.toFixed(2).replace('.00', '');
-        text += `\n${emoji} ${category}: ${data.count} (${amountStr} zl)`;
+        text += `\n${emoji} ${category}: ${data.count} (${formatCurrency(data.amount)})`;
       }
     }
 
@@ -133,13 +133,12 @@ export class TelegramService {
     totalAmount: number,
     items: Array<{ name: string; amount: number; count?: number }>
   ): Promise<TelegramMessage> {
-    const amountStr = totalAmount.toFixed(2);
-    let text = `📊 ${title}\n\n💰 Razem: *${amountStr} zl*\n\n`;
+    let text = `📊 ${title}\n\n💰 ${t('ui.stats.total')}: *${formatCurrency(totalAmount)}*\n\n`;
 
     items.slice(0, 10).forEach((item, idx) => {
       const prefix = idx === items.length - 1 ? '└──' : '├──';
       const countStr = item.count ? ` (${item.count}x)` : '';
-      text += `${prefix} ${item.name}: ${item.amount.toFixed(2)} zl${countStr}\n`;
+      text += `${prefix} ${item.name}: ${formatCurrency(item.amount)}${countStr}\n`;
     });
 
     return this.sendMessage({
@@ -196,7 +195,29 @@ export class TelegramService {
   }
 
   async downloadFile(filePath: string): Promise<ArrayBuffer> {
+    // Validate file path to prevent path traversal attacks
+    if (!filePath || typeof filePath !== 'string') {
+      throw new Error('Invalid file path');
+    }
+
+    // Prevent path traversal
+    if (filePath.includes('..') || filePath.includes('//')) {
+      throw new Error('Path traversal detected');
+    }
+
+    // Validate file path format (Telegram file paths are alphanumeric with slashes, dots, underscores, hyphens)
+    if (!/^[a-zA-Z0-9\/_.-]+$/.test(filePath)) {
+      throw new Error('Invalid file path characters');
+    }
+
     const url = `${this.baseUrl}/file/bot${this.botToken}/${filePath}`;
+
+    // Validate final URL is still Telegram domain
+    const parsedUrl = new URL(url);
+    if (!parsedUrl.hostname.endsWith('telegram.org')) {
+      throw new Error('Invalid download URL');
+    }
+
     const response = await fetch(url);
 
     if (!response.ok) {
@@ -204,6 +225,29 @@ export class TelegramService {
     }
 
     return response.arrayBuffer();
+  }
+
+  /**
+   * Sanitize text for Telegram Markdown to prevent injection
+   */
+  static sanitizeForMarkdown(text: string): string {
+    if (!text) return '';
+    return text
+      .replace(/[*_`\[\]()~>#+=|{}.!-]/g, '\\$&')
+      .slice(0, 4096); // Telegram message limit
+  }
+
+  /**
+   * Sanitize text for Telegram HTML to prevent injection
+   */
+  static sanitizeForHTML(text: string): string {
+    if (!text) return '';
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .slice(0, 4096);
   }
 
   async setWebhook(url: string): Promise<boolean> {

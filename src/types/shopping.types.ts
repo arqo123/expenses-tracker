@@ -1,4 +1,7 @@
+import { tsc } from '../i18n/index.ts';
+
 // Kategorie sklepowe dla smart routing (kolejność w sklepie)
+// Polish values are DB keys
 export const SHOP_CATEGORIES = [
   'Warzywa i owoce',
   'Pieczywo',
@@ -32,7 +35,7 @@ export const CATEGORY_ORDER: Record<ShopCategory, number> = {
   'Inne': 12,
 };
 
-// Emoji dla kategorii sklepowych
+// Emoji dla kategorii sklepowych (DB keys to emoji)
 export const SHOP_CATEGORY_EMOJI: Record<ShopCategory, string> = {
   'Warzywa i owoce': '🥬',
   'Pieczywo': '🍞',
@@ -47,6 +50,24 @@ export const SHOP_CATEGORY_EMOJI: Record<ShopCategory, string> = {
   'Dla zwierzat': '🐕',
   'Inne': '📦',
 };
+
+/**
+ * Get translated label for shop category (for UI display)
+ * @param category - DB category key (Polish)
+ * @returns Translated category name based on current language
+ */
+export function getShopCategoryLabel(category: ShopCategory): string {
+  return tsc(category);
+}
+
+/**
+ * Get emoji for shop category
+ * @param category - DB category key (Polish)
+ * @returns Emoji string for the category
+ */
+export function getShopCategoryEmoji(category: ShopCategory): string {
+  return SHOP_CATEGORY_EMOJI[category] || '📦';
+}
 
 // Emoji dla konkretnych produktów (bardziej szczegółowe niż kategorie)
 export const PRODUCT_EMOJI_MAP: Record<string, string> = {

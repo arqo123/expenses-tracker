@@ -1,38 +1,43 @@
 import type { Context } from 'hono';
 import type { TelegramMessage } from '../types/telegram.types.ts';
 import { mainMenuKeyboard } from '../keyboards/menu.keyboard.ts';
+import { t } from '../i18n/index.ts';
 
-// Help message text
-const HELP_TEXT = `ℹ️ *EXPENSE TRACKER BOT - POMOC*
+// Help message text - built from i18n keys
+function getHelpText(): string {
+  return `ℹ️ *${t('ui.commands.help.title')}*
 
-📝 *JAK DODAC WYDATEK:*
-• Napisz np. "Biedronka 50 zl" lub "kawa 15"
-• 🎤 Wyslij nagranie glosowe
-• 📷 Wyslij zdjecie paragonu
-• 📄 Wyslij plik CSV z banku
+📝 *${t('ui.commands.help.howToAdd')}*
+• ${t('ui.commands.help.addText')}
+• 🎤 ${t('ui.commands.help.addVoice')}
+• 📷 ${t('ui.commands.help.addPhoto')}
+• 📄 ${t('ui.commands.help.addCsv')}
 
-📊 *STATYSTYKI:*
-• Wpisz /menu aby otworzyc menu statystyk
-• Lub napisz np. "ile wydalem w tym miesiacu?"
+📊 *${t('ui.commands.help.statsTitle')}*
+• ${t('ui.commands.help.statsMenu')}
+• ${t('ui.commands.help.statsAsk')}
 
-✏️ *KOREKTA:*
-• Po dodaniu wydatku kliknij przycisk kategorii
-• Lub napisz "zmien na Restauracje"
+✏️ *${t('ui.commands.help.correctionTitle')}*
+• ${t('ui.commands.help.correctionButton')}
+• ${t('ui.commands.help.correctionText')}
 
-💡 *PRZYKLADY:*
-• "zabka 23.50 piwko"
-• "uber 45 zl"
-• "ile wydalem na transport?"
-• "pokaz ostatnie wydatki"
+💡 *${t('ui.commands.help.examplesTitle')}*
+• "${t('ui.commands.help.example1')}"
+• "${t('ui.commands.help.example2')}"
+• "${t('ui.commands.help.example3')}"
+• "${t('ui.commands.help.example4')}"
 
-📋 *KOMENDY:*
-• /menu - menu statystyk
-• /help - ta pomoc`;
+📋 *${t('ui.commands.help.commandsTitle')}*
+• ${t('ui.commands.help.commandMenu')}
+• ${t('ui.commands.help.commandHelp')}`;
+}
 
-// Menu message text
-const MENU_TEXT = `📊 *STATYSTYKI*
+// Menu message text - built from i18n keys
+function getMenuText(): string {
+  return `📊 *${t('ui.commands.menu.title')}*
 
-Co chcesz sprawdzic?`;
+${t('ui.commands.menu.whatToCheck')}`;
+}
 
 export async function helpCommand(c: Context, message: TelegramMessage): Promise<Response> {
   const telegram = c.get('telegram');
@@ -41,7 +46,7 @@ export async function helpCommand(c: Context, message: TelegramMessage): Promise
   try {
     await telegram.sendMessage({
       chat_id: chatId,
-      text: HELP_TEXT,
+      text: getHelpText(),
       parse_mode: 'Markdown',
     });
 
@@ -59,7 +64,7 @@ export async function menuCommand(c: Context, message: TelegramMessage): Promise
   try {
     await telegram.sendMessage({
       chat_id: chatId,
-      text: MENU_TEXT,
+      text: getMenuText(),
       parse_mode: 'Markdown',
       reply_markup: mainMenuKeyboard(),
     });

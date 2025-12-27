@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import type { TelegramMessage } from '../types/telegram.types.ts';
 import { getUserName } from './webhook.handler.ts';
 import { parseExpenseText } from '../parsers/text.parser.ts';
+import { t } from '../i18n/index.ts';
 
 export async function textHandler(c: Context, message: TelegramMessage): Promise<Response> {
   const aiCategorizer = c.get('aiCategorizer');
@@ -28,7 +29,7 @@ export async function textHandler(c: Context, message: TelegramMessage): Promise
 
     // Validate we have an amount
     if (!amount || amount <= 0) {
-      await telegram.sendError(chatId, 'Nie rozpoznałem kwoty. Podaj kwotę (np. "zabka 15" lub "kawa 6,50 zł")');
+      await telegram.sendError(chatId, t('ui.errors.amountNotRecognized'));
       return c.json({ ok: true });
     }
 
@@ -76,13 +77,13 @@ export async function textHandler(c: Context, message: TelegramMessage): Promise
       console.log('[TextHandler] Duplicate expense, skipping');
       await telegram.sendMessage({
         chat_id: chatId,
-        text: '⏭️ Wydatek już zapisany',
+        text: `⏭️ ${t('ui.errors.alreadySaved')}`,
       });
       return c.json({ ok: true, duplicate: true });
     }
 
     console.error('[TextHandler] Error:', error);
-    await telegram.sendError(chatId, 'Nie udalo sie przetworzyc wydatku. Sprobuj: sklep kwota');
+    await telegram.sendError(chatId, t('ui.errors.processingFailed'));
     return c.json({ ok: false }, 500);
   }
 }

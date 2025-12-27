@@ -3,12 +3,15 @@ import { NLPQueryService } from '../services/nlp-query.service.ts';
 import { QueryExecutorService } from '../services/query-executor.service.ts';
 import { formatQueryResponse } from '../formatters/query-response.formatter.ts';
 import type { QueryAPIRequest, ResponseFormat } from '../types/nlp-query.types.ts';
+import { getEnv } from '../config/env.ts';
+import { sanitizeError } from '../middleware/security.middleware.ts';
 
 /**
  * Create query routes for REST API
  */
 export function createQueryRoutes() {
   const queryRoutes = new Hono();
+  const env = getEnv();
 
   /**
    * POST /api/query
@@ -37,15 +40,33 @@ export function createQueryRoutes() {
         return c.json({ error: 'Missing or invalid "user" field' }, 400);
       }
 
+      // Validate user is allowed
+      if (!env.ALLOWED_USERS.includes(body.user)) {
+        console.warn(`[QueryAPI] Unauthorized user access attempt: ${body.user}`);
+        return c.json({ error: 'Unauthorized user', code: 'UNAUTHORIZED_USER' }, 403);
+      }
+
+      // Validate query length to prevent abuse
+      if (body.query.length > 500) {
+        return c.json({ error: 'Query too long (max 500 characters)' }, 400);
+      }
+
       const format: ResponseFormat = body.format || 'json';
 
-      console.log(`[QueryAPI] Query from ${body.user}: "${body.query}"`);
+      // Log query (without sensitive details in production)
+      if (env.NODE_ENV === 'development') {
+        console.log(`[QueryAPI] Query from ${body.user}: "${body.query}"`);
+      } else {
+        console.log(`[QueryAPI] Query from ${body.user}`);
+      }
 
       // 1. Parse query with AI
       const nlpService = new NLPQueryService();
       const parsedQuery = await nlpService.parseQuery(body.query);
 
-      console.log('[QueryAPI] Parsed query:', JSON.stringify(parsedQuery, null, 2));
+      if (env.NODE_ENV === 'development') {
+        console.log('[QueryAPI] Parsed query:', JSON.stringify(parsedQuery, null, 2));
+      }
 
       // 2. Check confidence
       if (parsedQuery.confidence < 0.3) {
@@ -101,12 +122,17 @@ export function createQueryRoutes() {
         },
       });
     } catch (error) {
-      console.error('[QueryAPI] Error:', error);
+      // Log error details in development only
+      if (env.NODE_ENV === 'development') {
+        console.error('[QueryAPI] Error:', error);
+      } else {
+        console.error('[QueryAPI] Error occurred');
+      }
 
       return c.json(
         {
           success: false,
-          error: error instanceof Error ? error.message : 'Query processing failed',
+          error: sanitizeError(error, env.NODE_ENV === 'development'),
           meta: {
             executionTimeMs: Date.now() - startTime,
           },

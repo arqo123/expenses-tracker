@@ -4,6 +4,7 @@ import { getUserName } from './webhook.handler.ts';
 import { CATEGORY_EMOJI, type ExpenseCategory } from '../types/expense.types.ts';
 import { ReceiptMatcherService } from '../services/receipt-matcher.service.ts';
 import { ShoppingDatabaseService } from '../services/shopping-database.service.ts';
+import { t, tc, formatCurrency } from '../i18n/index.ts';
 
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -26,7 +27,7 @@ export async function imageHandler(c: Context, message: TelegramMessage): Promis
       fileId = photo.file_id;
 
       if (photo.file_size && photo.file_size > MAX_IMAGE_SIZE) {
-        await telegram.sendError(chatId, 'Zdjecie za duze (max 10 MB)');
+        await telegram.sendError(chatId, t('ui.errors.imageTooLarge', { size: '10 MB' }));
         return c.json({ ok: true });
       }
     } else if (message.document) {
@@ -34,11 +35,11 @@ export async function imageHandler(c: Context, message: TelegramMessage): Promis
       mimeType = message.document.mime_type || 'image/jpeg';
 
       if (message.document.file_size && message.document.file_size > MAX_IMAGE_SIZE) {
-        await telegram.sendError(chatId, 'Plik za duzy (max 10 MB)');
+        await telegram.sendError(chatId, t('ui.errors.fileTooLarge', { size: '10 MB' }));
         return c.json({ ok: true });
       }
     } else {
-      await telegram.sendError(chatId, 'Brak zdjecia do przetworzenia');
+      await telegram.sendError(chatId, t('ui.errors.noImageToProcess'));
       return c.json({ ok: true });
     }
 
@@ -57,7 +58,7 @@ export async function imageHandler(c: Context, message: TelegramMessage): Promis
     if (!visionResult.products || visionResult.products.length === 0) {
       await telegram.sendError(
         chatId,
-        'Nie udalo sie odczytac produktow. Sprobuj wyrazniejsze zdjecie.'
+        t('ui.errors.ocrFailed')
       );
       return c.json({ ok: true });
     }
@@ -69,7 +70,7 @@ export async function imageHandler(c: Context, message: TelegramMessage): Promis
     if (validProducts.length === 0) {
       await telegram.sendError(
         chatId,
-        'Brak produktow do zapisania (tylko rabaty/znizki?)'
+        t('ui.errors.noProductsToSave')
       );
       return c.json({ ok: true });
     }
@@ -214,48 +215,49 @@ export async function imageHandler(c: Context, message: TelegramMessage): Promis
     }
 
     // Build response message with products grouped by category
-    let text = `📷 Paragon z *${visionResult.source}*\n\n`;
+    let text = `📷 ${t('ui.receipt.receiptFrom', { shop: visionResult.source })}`.replace('{shop}', `*${visionResult.source}*`) + `\n\n`;
 
     // Products grouped by category
     for (const [category, products] of Object.entries(categoryGroups)) {
       const emoji = CATEGORY_EMOJI[category as ExpenseCategory] || '❓';
-      text += `${emoji} *${category}*:\n`;
+      const categoryLabel = tc(category as ExpenseCategory);
+      text += `${emoji} *${categoryLabel}*:\n`;
       for (const p of products) {
-        text += `  - ${p.name}: ${p.price.toFixed(2)} zł\n`;
+        text += `  - ${p.name}: ${formatCurrency(p.price)}\n`;
       }
       text += '\n';
     }
 
     // Total
-    text += `💰 Razem: *${totalAmount.toFixed(2)} zł*\n`;
+    text += `💰 ${t('ui.receipt.totalAmount', { amount: `*${formatCurrency(totalAmount)}*` })}\n`;
 
     // Info o rabatach
     if (visionResult.total_discounts && visionResult.total_discounts > 0) {
-      text += `🏷️ Uwzględniono rabaty: *-${visionResult.total_discounts.toFixed(2)} zł*\n`;
+      text += `🏷️ ${t('ui.receipt.discountsApplied', { amount: `*${formatCurrency(visionResult.total_discounts)}*` })}\n`;
     }
 
     // Category stats
     const categoryStats = Object.entries(categoryGroups)
-      .map(([cat, prods]) => `${prods.length}x ${cat}`)
+      .map(([cat, prods]) => `${prods.length}x ${tc(cat as ExpenseCategory)}`)
       .join(', ');
 
     if (createdExpenses.length > 0) {
-      text += `✅ Utworzono ${createdExpenses.length} wydatków (${categoryStats})`;
+      text += `✅ ${t('ui.receipt.createdExpenses', { count: createdExpenses.length, categories: categoryStats })}`;
     }
 
     // Info about duplicates
     if (duplicates.length > 0) {
-      text += `\n🔄 Duplikaty: ${duplicates.length} (juz istnieja)`;
+      text += `\n🔄 ${t('ui.receipt.duplicates', { count: duplicates.length })}`;
     }
 
     // Info about items checked from shopping list
     if (checkedFromList.length > 0) {
-      text += `\n\n🛒 *Odhaczono z listy:* ${checkedFromList.join(', ')}`;
+      text += `\n\n🛒 *${t('ui.receipt.checkedFromList', { items: checkedFromList.join(', ') })}*`.replace('*{items}*', checkedFromList.join(', '));
     }
 
     // Handle case when all products are duplicates
     if (createdExpenses.length === 0) {
-      text += `\n\n_Ten paragon został już wcześniej przetworzony._`;
+      text += `\n\n_${t('ui.errors.receiptAlreadyProcessed')}_`;
     }
 
     // Build edit keyboard only if we have new expenses
@@ -263,7 +265,7 @@ export async function imageHandler(c: Context, message: TelegramMessage): Promis
     const editKeyboard = createdExpenses.length > 0
       ? {
           inline_keyboard: [
-            [{ text: '✏️ Edytuj kategorie', callback_data: `ocr_list:${createdExpenses.length}` }]
+            [{ text: `✏️ ${t('ui.buttons.editCategories')}`, callback_data: `ocr_list:${createdExpenses.length}` }]
           ]
         }
       : undefined;
@@ -295,7 +297,7 @@ export async function imageHandler(c: Context, message: TelegramMessage): Promis
     return c.json({ ok: true, expenses: createdExpenses });
   } catch (error) {
     console.error('[ImageHandler] Error:', error);
-    await telegram.sendError(chatId, 'Blad przetwarzania zdjecia.');
+    await telegram.sendError(chatId, t('ui.errors.imageProcessingError'));
     return c.json({ ok: false }, 500);
   }
 }

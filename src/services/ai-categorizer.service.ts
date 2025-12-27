@@ -8,6 +8,7 @@ import type {
   ExpenseCategory,
   StoreType,
 } from '../types/expense.types.ts';
+import { getPrompts, getAllCategories } from '../i18n/index.ts';
 
 // Force category based on store type for specialized stores
 function getVisionForcedCategory(storeType: StoreType | undefined, source: string): ExpenseCategory | null {
@@ -323,9 +324,7 @@ KATEGORYZACJA PRODUKTÓW:
   - Artykuły dziecięce (pieluchy, przeciery owocowe dla dzieci) → "Dzieci"
 
 DOSTĘPNE KATEGORIE:
-Zakupy spozywcze, Restauracje, Delivery, Kawiarnie, Transport, Paliwo, Auto, Dom,
-Zdrowie, Uroda, Rozrywka, Sport, Hobby, Ubrania, Elektronika, Subskrypcje,
-Edukacja, Zwierzeta, Dzieci, Prezenty, Inwestycje, Przelewy, Hotele, Oplaty administracyjne, Inne
+${getAllCategories().join(', ')}
 
 OUTPUT (TYLKO JSON):
 {
@@ -342,6 +341,10 @@ OUTPUT (TYLKO JSON):
   }
 
   private buildUserMessage(mode: CategorizerMode, inputData: unknown): string | object[] {
+    const prompts = getPrompts();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const categorizer = prompts.categorizer as any;
+
     if (mode === 'vision') {
       const data = inputData as { image_base64: string; mime: string };
       return [
@@ -353,16 +356,16 @@ OUTPUT (TYLKO JSON):
         },
         {
           type: 'text',
-          text: 'Przeanalizuj ten paragon/rachunek i zwroc JSON z produktami.',
+          text: categorizer.userMessageVision,
         },
       ];
     }
 
     if (mode === 'batch') {
-      return `Kategoryzuj te transakcje:\n${JSON.stringify(inputData, null, 2)}`;
+      return `${categorizer.batchTask}\n${JSON.stringify(inputData, null, 2)}`;
     }
 
-    return `Kategoryzuj wydatek: ${inputData as string}`;
+    return `${categorizer.singleTask} ${inputData as string}`;
   }
 
   private parseResponse(

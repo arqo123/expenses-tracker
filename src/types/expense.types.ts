@@ -1,4 +1,6 @@
-// 25 expense categories
+import { tc } from '../i18n/index.ts';
+
+// 25 expense categories (Polish values are DB keys)
 export const EXPENSE_CATEGORIES = [
   'Zakupy spozywcze',
   'Restauracje',
@@ -132,7 +134,7 @@ export interface ExpenseQueryResult {
   };
 }
 
-// Category emoji mapping
+// Category emoji mapping (DB keys to emoji)
 export const CATEGORY_EMOJI: Record<ExpenseCategory, string> = {
   'Zakupy spozywcze': '🛒',
   'Restauracje': '🍽️',
@@ -160,3 +162,21 @@ export const CATEGORY_EMOJI: Record<ExpenseCategory, string> = {
   'Oplaty administracyjne': '📋',
   'Inne': '❓',
 };
+
+/**
+ * Get translated label for expense category (for UI display)
+ * @param category - DB category key (Polish)
+ * @returns Translated category name based on current language
+ */
+export function getCategoryLabel(category: ExpenseCategory): string {
+  return tc(category);
+}
+
+/**
+ * Get emoji for expense category
+ * @param category - DB category key (Polish)
+ * @returns Emoji string for the category
+ */
+export function getCategoryEmoji(category: ExpenseCategory): string {
+  return CATEGORY_EMOJI[category] || '❓';
+}

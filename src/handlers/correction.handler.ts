@@ -3,6 +3,7 @@ import type { TelegramMessage } from '../types/telegram.types.ts';
 import { getUserName } from './webhook.handler.ts';
 import { extractCorrectionCategory } from '../parsers/text.parser.ts';
 import { EXPENSE_CATEGORIES, type ExpenseCategory } from '../types/expense.types.ts';
+import { t } from '../i18n/index.ts';
 
 const CORRECTION_WINDOW_MINUTES = 5;
 
@@ -20,7 +21,7 @@ export async function correctionHandler(c: Context, message: TelegramMessage): P
     if (!requestedCategory) {
       await telegram.sendError(
         chatId,
-        'Podaj kategorie. Np: "zmien na Restauracje"'
+        t('ui.correction.provideCategory')
       );
       return c.json({ ok: true });
     }
@@ -40,7 +41,7 @@ export async function correctionHandler(c: Context, message: TelegramMessage): P
         const categoryList = EXPENSE_CATEGORIES.slice(0, 10).join(', ');
         await telegram.sendError(
           chatId,
-          `Nieznana kategoria "${requestedCategory}". Dostepne: ${categoryList}...`
+          t('ui.errors.categoryUnknown', { category: requestedCategory, list: categoryList })
         );
         return c.json({ ok: true });
       }
@@ -52,7 +53,7 @@ export async function correctionHandler(c: Context, message: TelegramMessage): P
     return await performCorrection(c, userName, chatId, matchedCategory);
   } catch (error) {
     console.error('[CorrectionHandler] Error:', error);
-    await telegram.sendError(chatId, 'Blad zmiany kategorii.');
+    await telegram.sendError(chatId, t('ui.errors.categoryChangeFailed'));
     return c.json({ ok: false }, 500);
   }
 }
@@ -70,7 +71,7 @@ async function performCorrection(
   const lastExpense = await database.getLastExpenseByUser(userName);
 
   if (!lastExpense) {
-    await telegram.sendError(chatId, 'Brak wydatkow do zmiany.');
+    await telegram.sendError(chatId, t('ui.errors.noExpensesToChange'));
     return c.json({ ok: true });
   }
 
@@ -82,7 +83,7 @@ async function performCorrection(
   if (diffMinutes > CORRECTION_WINDOW_MINUTES) {
     await telegram.sendError(
       chatId,
-      `Minelo wiecej niz ${CORRECTION_WINDOW_MINUTES} minut. Nie mozna zmienic.`
+      t('ui.errors.correctionWindowExpired', { minutes: CORRECTION_WINDOW_MINUTES })
     );
     return c.json({ ok: true });
   }
@@ -93,7 +94,7 @@ async function performCorrection(
   const updated = await database.updateExpenseCategory(lastExpense.id, newCategory);
 
   if (!updated) {
-    await telegram.sendError(chatId, 'Nie udalo sie zaktualizowac kategorii.');
+    await telegram.sendError(chatId, t('ui.errors.updateFailed'));
     return c.json({ ok: true });
   }
 
@@ -116,8 +117,12 @@ async function performCorrection(
   // Send confirmation
   await telegram.sendMessage({
     chat_id: chatId,
-    text: `✅ Zmieniono: ${lastExpense.sprzedawca} ${lastExpense.kwota} zl
-${oldCategory} → *${newCategory}*`,
+    text: `✅ ${t('ui.correction.changed', {
+      shop: lastExpense.sprzedawca,
+      amount: lastExpense.kwota,
+      oldCategory: oldCategory,
+      newCategory: `*${newCategory}*`,
+    })}`,
     parse_mode: 'Markdown',
   });
 

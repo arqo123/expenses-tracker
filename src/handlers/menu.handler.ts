@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import type { TelegramCallbackQuery, InlineKeyboardMarkup } from '../types/telegram.types.ts';
 import { StatsService, type Period } from '../services/stats.service.ts';
 import { CATEGORY_EMOJI, type ExpenseCategory } from '../types/expense.types.ts';
+import { t, tc, formatCurrency } from '../i18n/index.ts';
 import {
   mainMenuKeyboard,
   timeMenuKeyboard,
@@ -18,7 +19,6 @@ import {
   periodSelectKeyboard,
 } from '../keyboards/menu.keyboard.ts';
 import {
-  formatAmount,
   monthlyTrendChart,
   weekdayChart,
   categoryBreakdownChart,
@@ -44,7 +44,7 @@ export async function menuHandler(
   const messageId = callbackQuery.message?.message_id;
 
   if (!chatId || !messageId) {
-    await telegram.answerCallbackQuery(callbackQuery.id, 'Blad');
+    await telegram.answerCallbackQuery(callbackQuery.id, t('ui.errors.error'));
     return c.json({ ok: true });
   }
 
@@ -83,7 +83,7 @@ export async function menuHandler(
   } catch (error) {
     console.error('[MenuHandler] Error:', error);
     // Try to answer callback if not already answered
-    await telegram.answerCallbackQuery(callbackQuery.id, 'Blad').catch(() => {});
+    await telegram.answerCallbackQuery(callbackQuery.id, t('ui.errors.error')).catch(() => {});
     return c.json({ ok: false }, 500);
   }
 }
@@ -102,7 +102,7 @@ async function routeMenuAction(
     // ==================== MAIN MENU ====================
     case 'main':
       return {
-        text: '📊 *STATYSTYKI*\n\nCo chcesz sprawdzic?',
+        text: `📊 *${t('ui.menu.statsTitle')}*\n\n${t('ui.menu.whatToCheck')}`,
         keyboard: mainMenuKeyboard(),
       };
 
@@ -113,7 +113,7 @@ async function routeMenuAction(
     case 'time':
       if (params.length === 0) {
         return {
-          text: '📅 *RAPORTY CZASOWE*\n\nWybierz okres:',
+          text: `📅 *${t('ui.menu.timeReportsTitle')}*\n\n${t('ui.menu.selectPeriod')}`,
           keyboard: timeMenuKeyboard(),
         };
       }
@@ -123,7 +123,7 @@ async function routeMenuAction(
     case 'cat':
       if (params.length === 0) {
         return {
-          text: '📁 *KATEGORIE*\n\nCo chcesz wiedziec?',
+          text: `📁 *${t('ui.menu.categoriesTitle')}*\n\n${t('ui.menu.whatToKnow')}`,
           keyboard: categoryMenuKeyboard(),
         };
       }
@@ -133,7 +133,7 @@ async function routeMenuAction(
     case 'shop':
       if (params.length === 0) {
         return {
-          text: '🏪 *SKLEPY*\n\nCo chcesz wiedziec?',
+          text: `🏪 *${t('ui.menu.shopsTitle')}*\n\n${t('ui.menu.whatToKnow')}`,
           keyboard: shopMenuKeyboard(),
         };
       }
@@ -150,7 +150,7 @@ async function routeMenuAction(
     case 'trends':
       if (params.length === 0) {
         return {
-          text: '📈 *TRENDY I ANALIZY*\n\nWybierz analize:',
+          text: `📈 *${t('ui.menu.trendsTitle')}*\n\n${t('ui.menu.selectAnalysis')}`,
           keyboard: trendsMenuKeyboard(),
         };
       }
@@ -160,7 +160,7 @@ async function routeMenuAction(
     case 'search':
       if (params.length === 0) {
         return {
-          text: '🔍 *WYSZUKIWANIE*\n\nWybierz filtr:',
+          text: `🔍 *${t('ui.menu.searchTitle')}*\n\n${t('ui.menu.selectFilter')}`,
           keyboard: searchMenuKeyboard(),
         };
       }
@@ -168,7 +168,7 @@ async function routeMenuAction(
 
     default:
       return {
-        text: '📊 *STATYSTYKI*\n\nCo chcesz sprawdzic?',
+        text: `📊 *${t('ui.menu.statsTitle')}*\n\n${t('ui.menu.whatToCheck')}`,
         keyboard: mainMenuKeyboard(),
       };
   }
@@ -180,37 +180,37 @@ function handleBack(section?: string): MenuResult {
   switch (section) {
     case 'time':
       return {
-        text: '📅 *RAPORTY CZASOWE*\n\nWybierz okres:',
+        text: `📅 *${t('ui.menu.timeReportsTitle')}*\n\n${t('ui.menu.selectPeriod')}`,
         keyboard: timeMenuKeyboard(),
       };
     case 'cat':
       return {
-        text: '📁 *KATEGORIE*\n\nCo chcesz wiedziec?',
+        text: `📁 *${t('ui.menu.categoriesTitle')}*\n\n${t('ui.menu.whatToKnow')}`,
         keyboard: categoryMenuKeyboard(),
       };
     case 'shop':
       return {
-        text: '🏪 *SKLEPY*\n\nCo chcesz wiedziec?',
+        text: `🏪 *${t('ui.menu.shopsTitle')}*\n\n${t('ui.menu.whatToKnow')}`,
         keyboard: shopMenuKeyboard(),
       };
     case 'users':
       return {
-        text: '👥 *POROWNANIE*\n\nWybierz opcje:',
+        text: `👥 *${t('ui.menu.comparisonTitle')}*\n\n${t('ui.menu.selectOption')}`,
         keyboard: usersMenuKeyboard(),
       };
     case 'trends':
       return {
-        text: '📈 *TRENDY I ANALIZY*\n\nWybierz analize:',
+        text: `📈 *${t('ui.menu.trendsTitle')}*\n\n${t('ui.menu.selectAnalysis')}`,
         keyboard: trendsMenuKeyboard(),
       };
     case 'search':
       return {
-        text: '🔍 *WYSZUKIWANIE*\n\nWybierz filtr:',
+        text: `🔍 *${t('ui.menu.searchTitle')}*\n\n${t('ui.menu.selectFilter')}`,
         keyboard: searchMenuKeyboard(),
       };
     default:
       return {
-        text: '📊 *STATYSTYKI*\n\nCo chcesz sprawdzic?',
+        text: `📊 *${t('ui.menu.statsTitle')}*\n\n${t('ui.menu.whatToCheck')}`,
         keyboard: mainMenuKeyboard(),
       };
   }
@@ -226,11 +226,11 @@ async function handleTimeAction(stats: StatsService, params: string[]): Promise<
     const period = action as Period;
     const summary = await stats.getSummary(period);
 
-    const text = `📅 *Raport za: ${summary.period.label}*
+    const text = `📅 *${t('ui.menu.reportFor', { period: summary.period.label })}*
 
-💰 Suma: *${formatAmount(summary.totalAmount)} zl*
-📊 Transakcji: ${summary.totalCount}
-📈 Srednio/dzien: ${formatAmount(summary.avgDaily)} zl`;
+💰 ${t('ui.menu.sum')}: *${formatCurrency(summary.totalAmount)}*
+📊 ${t('ui.menu.transactionsCount')}: ${summary.totalCount}
+📈 ${t('ui.stats.averagePerDay')}: ${formatCurrency(summary.avgDaily)}`;
 
     return {
       text,
@@ -246,7 +246,7 @@ async function handleTimeAction(stats: StatsService, params: string[]): Promise<
 
     const chartData = categories.map(c => ({
       emoji: c.emoji,
-      category: c.category,
+      category: tc(c.category),
       amount: c.amount,
       percentage: c.percentage,
     }));
@@ -254,7 +254,7 @@ async function handleTimeAction(stats: StatsService, params: string[]): Promise<
     const chart = categoryBreakdownChart(chartData, summary.totalAmount);
 
     return {
-      text: `📊 *Wydatki wg kategorii*\n${summary.period.label}\n\n\`\`\`\n${chart}\n\`\`\``,
+      text: `📊 *${t('ui.menu.categoryExpenses')}*\n${summary.period.label}\n\n\`\`\`\n${chart}\n\`\`\``,
       keyboard: timeDetailsKeyboard(period),
     };
   }
@@ -268,7 +268,7 @@ async function handleTimeAction(stats: StatsService, params: string[]): Promise<
     const chart = shopRankingChart(shops);
 
     return {
-      text: `🏪 *Top sklepy*\n${range.label}\n\n\`\`\`\n${chart}\n\`\`\``,
+      text: `🏪 *${t('ui.stats.topShops')}*\n${range.label}\n\n\`\`\`\n${chart}\n\`\`\``,
       keyboard: timeDetailsKeyboard(period),
     };
   }
@@ -279,18 +279,18 @@ async function handleTimeAction(stats: StatsService, params: string[]): Promise<
     const transactions = await stats.getTransactionsList(period, undefined, undefined, 15);
     const range = stats.getDateRange(period);
 
-    const listData = transactions.map(t => ({
-      date: t.data,
-      shop: t.sprzedawca || 'Nieznany',
-      amount: t.kwota,
-      category: t.kategoria,
-      emoji: CATEGORY_EMOJI[t.kategoria] || '❓',
+    const listData = transactions.map(tx => ({
+      date: tx.data,
+      shop: tx.sprzedawca || t('common.unknown'),
+      amount: tx.kwota,
+      category: tc(tx.kategoria),
+      emoji: CATEGORY_EMOJI[tx.kategoria] || '❓',
     }));
 
     const list = transactionList(listData, 15);
 
     return {
-      text: `📋 *Transakcje*\n${range.label}\n\n\`\`\`\n${list}\n\`\`\``,
+      text: `📋 *${t('ui.menu.transactions')}*\n${range.label}\n\n\`\`\`\n${list}\n\`\`\``,
       keyboard: timeDetailsKeyboard(period),
     };
   }
@@ -308,13 +308,13 @@ async function handleTimeAction(stats: StatsService, params: string[]): Promise<
     );
 
     return {
-      text: `📉 *Porownanie z poprzednim okresem*\n\n\`\`\`\n${chart}\n\`\`\``,
+      text: `📉 *${t('ui.menu.comparisonPeriod')}*\n\n\`\`\`\n${chart}\n\`\`\``,
       keyboard: timeDetailsKeyboard(period),
     };
   }
 
   return {
-    text: '📅 *RAPORTY CZASOWE*\n\nWybierz okres:',
+    text: `📅 *${t('ui.menu.timeReportsTitle')}*\n\n${t('ui.menu.selectPeriod')}`,
     keyboard: timeMenuKeyboard(),
   };
 }
@@ -332,7 +332,7 @@ async function handleCategoryAction(stats: StatsService, params: string[]): Prom
 
     const chartData = categories.map(c => ({
       emoji: c.emoji,
-      category: c.category,
+      category: tc(c.category),
       amount: c.amount,
       percentage: c.percentage,
     }));
@@ -340,7 +340,7 @@ async function handleCategoryAction(stats: StatsService, params: string[]): Prom
     const chart = categoryBreakdownChart(chartData, summary.totalAmount);
 
     return {
-      text: `🏆 *Top ${limit} kategorii*\nTen miesiac\n\n\`\`\`\n${chart}\n\`\`\``,
+      text: `🏆 *${t('ui.menu.topCategories', { count: limit })}*\n${t('ui.periods.thisMonth')}\n\n\`\`\`\n${chart}\n\`\`\``,
       keyboard: categoryMenuKeyboard(),
     };
   }
@@ -352,7 +352,7 @@ async function handleCategoryAction(stats: StatsService, params: string[]): Prom
 
     const chartData = categories.map(c => ({
       emoji: c.emoji,
-      category: c.category,
+      category: tc(c.category),
       amount: c.amount,
       percentage: c.percentage,
     }));
@@ -360,7 +360,7 @@ async function handleCategoryAction(stats: StatsService, params: string[]): Prom
     const chart = categoryBreakdownChart(chartData, summary.totalAmount);
 
     return {
-      text: `📊 *Wszystkie kategorie*\nTen miesiac\n\n\`\`\`\n${chart}\n\`\`\``,
+      text: `📊 *${t('ui.menu.allCategories')}*\n${t('ui.periods.thisMonth')}\n\n\`\`\`\n${chart}\n\`\`\``,
       keyboard: categoryMenuKeyboard(),
     };
   }
@@ -370,29 +370,30 @@ async function handleCategoryAction(stats: StatsService, params: string[]): Prom
     const page = parseInt(params[1] || '0', 10);
 
     return {
-      text: '🔎 *Wybierz kategorie:*',
+      text: `🔎 *${t('ui.menu.selectCategory')}*`,
       keyboard: categorySelectKeyboard(page),
     };
   }
 
   // Category view
   if (action === 'view') {
-    const category = params[1] || 'Inne';
+    const category = params[1] || t('common.other');
     const period = (params[2] || 'month') as Period;
     const details = await stats.getCategoryDetails(category, period);
 
     const emoji = CATEGORY_EMOJI[category as ExpenseCategory] || '❓';
+    const translatedCategory = tc(category);
 
-    let text = `${emoji} *${category.toUpperCase()}*\n`;
+    let text = `${emoji} *${translatedCategory.toUpperCase()}*\n`;
     text += `📅 ${details.summary.period.label}\n\n`;
-    text += `💰 Wydano: *${formatAmount(details.stats.amount)} zl*\n`;
-    text += `📊 Transakcji: ${details.stats.count}\n`;
-    text += `📈 Srednio/dzien: ${formatAmount(details.summary.avgDaily)} zl\n`;
+    text += `💰 ${t('ui.menu.spent')}: *${formatCurrency(details.stats.amount)}*\n`;
+    text += `📊 ${t('ui.menu.transactionsCount')}: ${details.stats.count}\n`;
+    text += `📈 ${t('ui.stats.averagePerDay')}: ${formatCurrency(details.summary.avgDaily)}\n`;
 
     if (details.topShops.length > 0) {
-      text += `\n🏪 *Top sklepy:*\n`;
+      text += `\n🏪 *${t('ui.stats.topShops')}:*\n`;
       for (const shop of details.topShops.slice(0, 3)) {
-        text += `  • ${shop.shop}: ${formatAmount(shop.amount)} zl (${shop.count}x)\n`;
+        text += `  • ${shop.shop}: ${formatCurrency(shop.amount)} (${shop.count}x)\n`;
       }
     }
 
@@ -404,53 +405,53 @@ async function handleCategoryAction(stats: StatsService, params: string[]): Prom
 
   // Category period selection
   if (action === 'period') {
-    const category = params[1] || 'Inne';
+    const category = params[1] || t('common.other');
     return {
-      text: `📆 *Wybierz okres dla: ${category}*`,
+      text: `📆 *${t('ui.menu.selectPeriodFor', { category: tc(category) })}*`,
       keyboard: periodSelectKeyboard(`menu:cat:view:${category}`),
     };
   }
 
   // Category shops
   if (action === 'shops') {
-    const category = params[1] || 'Inne';
+    const category = params[1] || t('common.other');
     const period = (params[2] || 'month') as Period;
     const details = await stats.getCategoryDetails(category, period);
 
     const chart = shopRankingChart(details.topShops);
 
     return {
-      text: `🏪 *Top sklepy w: ${category}*\n${details.summary.period.label}\n\n\`\`\`\n${chart}\n\`\`\``,
+      text: `🏪 *${t('ui.menu.topShopsIn', { category: tc(category) })}*\n${details.summary.period.label}\n\n\`\`\`\n${chart}\n\`\`\``,
       keyboard: categoryViewKeyboard(category, period),
     };
   }
 
   // Category transactions list
   if (action === 'list') {
-    const category = params[1] || 'Inne';
+    const category = params[1] || t('common.other');
     const period = (params[2] || 'month') as Period;
     const transactions = await stats.getTransactionsList(period, category, undefined, 15);
     const range = stats.getDateRange(period);
 
-    const listData = transactions.map(t => ({
-      date: t.data,
-      shop: t.sprzedawca || 'Nieznany',
-      amount: t.kwota,
-      category: t.kategoria,
-      emoji: CATEGORY_EMOJI[t.kategoria] || '❓',
+    const listData = transactions.map(tx => ({
+      date: tx.data,
+      shop: tx.sprzedawca || t('common.unknown'),
+      amount: tx.kwota,
+      category: tc(tx.kategoria),
+      emoji: CATEGORY_EMOJI[tx.kategoria] || '❓',
     }));
 
     const list = transactionList(listData, 15);
 
     return {
-      text: `📋 *Transakcje: ${category}*\n${range.label}\n\n\`\`\`\n${list}\n\`\`\``,
+      text: `📋 *${t('ui.menu.transactionsCategory', { category: tc(category) })}*\n${range.label}\n\n\`\`\`\n${list}\n\`\`\``,
       keyboard: categoryViewKeyboard(category, period),
     };
   }
 
   // Category trend
   if (action === 'trend') {
-    const category = params[1] || 'Inne';
+    const category = params[1] || t('common.other');
     // Get monthly data for this category
     const now = new Date();
     const monthlyData = [];
@@ -477,13 +478,13 @@ async function handleCategoryAction(stats: StatsService, params: string[]): Prom
     const chart = monthlyTrendChart(monthlyData);
 
     return {
-      text: `📉 *Trend: ${category}*\nOstatnie 6 miesiecy\n\n\`\`\`\n${chart}\n\`\`\``,
+      text: `📉 *${t('ui.menu.trendCategory', { category: tc(category) })}*\n${t('ui.menu.lastNMonths', { count: 6 })}\n\n\`\`\`\n${chart}\n\`\`\``,
       keyboard: categoryViewKeyboard(category, 'month'),
     };
   }
 
   return {
-    text: '📁 *KATEGORIE*\n\nCo chcesz wiedziec?',
+    text: `📁 *${t('ui.menu.categoriesTitle')}*\n\n${t('ui.menu.whatToKnow')}`,
     keyboard: categoryMenuKeyboard(),
   };
 }
@@ -501,24 +502,24 @@ async function handleShopAction(stats: StatsService, params: string[]): Promise<
     const chart = shopRankingChart(shops);
 
     return {
-      text: `🏆 *Top ${limit} sklepow*\nTen miesiac\n\n\`\`\`\n${chart}\n\`\`\``,
+      text: `🏆 *${t('ui.menu.topShops', { count: limit })}*\n${t('ui.periods.thisMonth')}\n\n\`\`\`\n${chart}\n\`\`\``,
       keyboard: shopMenuKeyboard(),
     };
   }
 
   // Shop view
   if (action === 'view') {
-    const shop = params[1] || 'Nieznany';
+    const shop = params[1] || t('common.unknown');
     const details = await stats.getShopDetails(shop, 'month');
 
     let text = `🏪 *${shop.toUpperCase()}*\n\n`;
-    text += `📅 *Ten miesiac:*\n`;
-    text += `💰 Wydano: *${formatAmount(details.stats.amount)} zl*\n`;
-    text += `📊 Wizyt: ${details.stats.count}\n`;
-    text += `💵 Sredni paragon: ${formatAmount(details.stats.avgAmount)} zl\n\n`;
-    text += `📅 *Ogolem:*\n`;
-    text += `💰 Wydano: ${formatAmount(details.allTimeStats.amount)} zl\n`;
-    text += `📊 Wizyt: ${details.allTimeStats.count}`;
+    text += `📅 *${t('ui.periods.thisMonth')}:*\n`;
+    text += `💰 ${t('ui.menu.spent')}: *${formatCurrency(details.stats.amount)}*\n`;
+    text += `📊 ${t('ui.menu.visits')}: ${details.stats.count}\n`;
+    text += `💵 ${t('ui.menu.avgReceipt')}: ${formatCurrency(details.stats.avgAmount)}\n\n`;
+    text += `📅 *${t('ui.menu.allTime')}:*\n`;
+    text += `💰 ${t('ui.menu.spent')}: ${formatCurrency(details.allTimeStats.amount)}\n`;
+    text += `📊 ${t('ui.menu.visits')}: ${details.allTimeStats.count}`;
 
     return {
       text,
@@ -528,27 +529,27 @@ async function handleShopAction(stats: StatsService, params: string[]): Promise<
 
   // Shop transactions
   if (action === 'list') {
-    const shop = params[1] || 'Nieznany';
+    const shop = params[1] || t('common.unknown');
     const transactions = await stats.getTransactionsList('month', undefined, shop, 15);
 
-    const listData = transactions.map(t => ({
-      date: t.data,
-      shop: t.sprzedawca || 'Nieznany',
-      amount: t.kwota,
-      category: t.kategoria,
-      emoji: CATEGORY_EMOJI[t.kategoria] || '❓',
+    const listData = transactions.map(tx => ({
+      date: tx.data,
+      shop: tx.sprzedawca || t('common.unknown'),
+      amount: tx.kwota,
+      category: tc(tx.kategoria),
+      emoji: CATEGORY_EMOJI[tx.kategoria] || '❓',
     }));
 
     const list = transactionList(listData, 15);
 
     return {
-      text: `📋 *Transakcje: ${shop}*\n\n\`\`\`\n${list}\n\`\`\``,
+      text: `📋 *${t('ui.menu.transactionsShop', { shop })}*\n\n\`\`\`\n${list}\n\`\`\``,
       keyboard: shopViewKeyboard(shop),
     };
   }
 
   return {
-    text: '🏪 *SKLEPY*\n\nCo chcesz wiedziec?',
+    text: `🏪 *${t('ui.menu.shopsTitle')}*\n\n${t('ui.menu.whatToKnow')}`,
     keyboard: shopMenuKeyboard(),
   };
 }
@@ -560,7 +561,7 @@ async function handleUsersDefault(stats: StatsService): Promise<MenuResult> {
 
   const chart = userComparisonChart(comparison.users);
 
-  let text = `👥 *POROWNANIE*\n${comparison.period.label}\n\n`;
+  let text = `👥 *${t('ui.menu.comparisonTitle')}*\n${comparison.period.label}\n\n`;
   text += `\`\`\`\n${chart}\n\`\`\``;
 
   return {
@@ -575,7 +576,7 @@ async function handleUsersAction(stats: StatsService, params: string[]): Promise
   // Period selection
   if (action === 'period') {
     return {
-      text: '📆 *Wybierz okres:*',
+      text: `📆 *${t('ui.menu.selectPeriod')}*`,
       keyboard: usersPeriodKeyboard(),
     };
   }
@@ -587,7 +588,7 @@ async function handleUsersAction(stats: StatsService, params: string[]): Promise
 
     const chart = userComparisonChart(comparison.users);
 
-    let text = `👥 *POROWNANIE*\n${comparison.period.label}\n\n`;
+    let text = `👥 *${t('ui.menu.comparisonTitle')}*\n${comparison.period.label}\n\n`;
     text += `\`\`\`\n${chart}\n\`\`\``;
 
     return {
@@ -601,16 +602,16 @@ async function handleUsersAction(stats: StatsService, params: string[]): Promise
     const period = (params[1] || 'month') as Period;
     const comparison = await stats.getUserCategoryComparison(period);
 
-    let text = `👥 *POROWNANIE KATEGORII*\n${comparison.period.label}\n\n`;
+    let text = `👥 *${t('ui.menu.categoryComparison')}*\n${comparison.period.label}\n\n`;
 
     text += `*👤 Arek:*\n`;
     for (const cat of comparison.arek.slice(0, 5)) {
-      text += `  ${cat.emoji} ${cat.category}: ${formatAmount(cat.amount)} zl\n`;
+      text += `  ${cat.emoji} ${tc(cat.category)}: ${formatCurrency(cat.amount)}\n`;
     }
 
     text += `\n*👤 Nastka:*\n`;
     for (const cat of comparison.nastka.slice(0, 5)) {
-      text += `  ${cat.emoji} ${cat.category}: ${formatAmount(cat.amount)} zl\n`;
+      text += `  ${cat.emoji} ${tc(cat.category)}: ${formatCurrency(cat.amount)}\n`;
     }
 
     return {
@@ -624,13 +625,13 @@ async function handleUsersAction(stats: StatsService, params: string[]): Promise
     const period = (params[1] || 'month') as Period;
     const comparison = await stats.getUserComparison(period);
 
-    let text = `📊 *SZCZEGOLOWE POROWNANIE*\n${comparison.period.label}\n\n`;
+    let text = `📊 *${t('ui.menu.detailedComparison')}*\n${comparison.period.label}\n\n`;
 
     for (const user of comparison.users) {
       text += `*👤 ${user.userName}:*\n`;
-      text += `  💰 Wydano: ${formatAmount(user.amount)} zl\n`;
-      text += `  📊 Transakcji: ${user.count}\n`;
-      text += `  📈 Udzial: ${user.percentage.toFixed(0)}%\n\n`;
+      text += `  💰 ${t('ui.menu.spent')}: ${formatCurrency(user.amount)}\n`;
+      text += `  📊 ${t('ui.menu.transactionsCount')}: ${user.count}\n`;
+      text += `  📈 ${t('ui.menu.share')}: ${user.percentage.toFixed(0)}%\n\n`;
     }
 
     return {
@@ -659,7 +660,7 @@ async function handleTrendsAction(stats: StatsService, params: string[]): Promis
     const chart = monthlyTrendChart(chartData);
 
     return {
-      text: `📉 *TREND WYDATKOW*\nOstatnie 6 miesiecy\n\n\`\`\`\n${chart}\n\`\`\``,
+      text: `📉 *${t('ui.menu.spendingTrend')}*\n${t('ui.menu.lastNMonths', { count: 6 })}\n\n\`\`\`\n${chart}\n\`\`\``,
       keyboard: trendsMenuKeyboard(),
     };
   }
@@ -676,7 +677,7 @@ async function handleTrendsAction(stats: StatsService, params: string[]): Promis
     const chart = monthlyTrendChart(chartData);
 
     return {
-      text: `📊 *POROWNANIE MIESIECY*\nOstatni rok\n\n\`\`\`\n${chart}\n\`\`\``,
+      text: `📊 *${t('ui.menu.monthComparison')}*\n${t('ui.menu.lastYear')}\n\n\`\`\`\n${chart}\n\`\`\``,
       keyboard: trendsMenuKeyboard(),
     };
   }
@@ -709,13 +710,13 @@ async function handleTrendsAction(stats: StatsService, params: string[]): Promis
     const chart = weekdayChart(chartData);
 
     return {
-      text: `📆 *KIEDY WYDAJESZ NAJWIECEJ?*\nTen miesiac\n\n\`\`\`\n${chart}\n\`\`\``,
+      text: `📆 *${t('ui.menu.whenSpendMost')}*\n${t('ui.periods.thisMonth')}\n\n\`\`\`\n${chart}\n\`\`\``,
       keyboard: trendsMenuKeyboard(),
     };
   }
 
   return {
-    text: '📈 *TRENDY I ANALIZY*\n\nWybierz analize:',
+    text: `📈 *${t('ui.menu.trendsTitle')}*\n\n${t('ui.menu.selectAnalysis')}`,
     keyboard: trendsMenuKeyboard(),
   };
 }

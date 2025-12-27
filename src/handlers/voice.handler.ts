@@ -7,6 +7,7 @@ import { correctionHandler } from './correction.handler.ts';
 import { isQuery, isCorrection } from '../parsers/text.parser.ts';
 import { shoppingAddHandler } from './shopping.handler.ts';
 import { ShoppingAIService } from '../services/shopping-ai.service.ts';
+import { t } from '../i18n/index.ts';
 
 const MAX_VOICE_DURATION = 60; // seconds
 const MAX_VOICE_SIZE = 1024 * 1024; // 1 MB
@@ -22,12 +23,12 @@ export async function voiceHandler(c: Context, message: TelegramMessage): Promis
   try {
     // Validate voice message
     if (voice.duration > MAX_VOICE_DURATION) {
-      await telegram.sendError(chatId, `Wiadomosc glosowa za dluga (max ${MAX_VOICE_DURATION}s)`);
+      await telegram.sendError(chatId, t('ui.errors.voiceTooLong', { seconds: MAX_VOICE_DURATION }));
       return c.json({ ok: true });
     }
 
     if (voice.file_size && voice.file_size > MAX_VOICE_SIZE) {
-      await telegram.sendError(chatId, 'Plik za duzy (max 1 MB)');
+      await telegram.sendError(chatId, t('ui.errors.fileTooLarge', { size: '1 MB' }));
       return c.json({ ok: true });
     }
 
@@ -40,7 +41,7 @@ export async function voiceHandler(c: Context, message: TelegramMessage): Promis
     const transcription = await whisper.transcribe(audioBuffer, voice.mime_type || 'audio/ogg');
 
     if (!transcription || transcription.trim().length === 0) {
-      await telegram.sendError(chatId, 'Nie udalo sie rozpoznac mowy. Sprobuj ponownie.');
+      await telegram.sendError(chatId, t('ui.errors.speechNotRecognized'));
       return c.json({ ok: true });
     }
 
@@ -87,7 +88,7 @@ export async function voiceHandler(c: Context, message: TelegramMessage): Promis
     return textHandler(c, textMessage);
   } catch (error) {
     console.error('[VoiceHandler] Error:', error);
-    await telegram.sendError(chatId, 'Blad przetwarzania wiadomosci glosowej.');
+    await telegram.sendError(chatId, t('ui.errors.voiceProcessingError'));
     return c.json({ ok: false }, 500);
   }
 }
