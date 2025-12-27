@@ -823,8 +823,24 @@ export class DatabaseService {
 
     const missingTables = requiredTables.filter(t => !existingTables.includes(t));
 
-    if (missingTables.length > 0) {
-      console.log('[Database] Missing tables:', missingTables.join(', '));
+    // Also check if shopping_items has the emoji column
+    let needsReset = missingTables.length > 0;
+    if (!needsReset && existingTables.includes('shopping_items')) {
+      const columnsResult = await this.pool.query(`
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'shopping_items' AND table_schema = 'public'
+      `);
+      const columns = columnsResult.rows.map(r => r.column_name);
+      if (!columns.includes('emoji')) {
+        console.log('[Database] shopping_items missing emoji column!');
+        needsReset = true;
+      }
+    }
+
+    if (needsReset) {
+      if (missingTables.length > 0) {
+        console.log('[Database] Missing tables:', missingTables.join(', '));
+      }
       console.log('[Database] Resetting database to fix structure...');
 
       // Drop all tables and recreate
