@@ -94,7 +94,8 @@ export class TelegramService {
     duplicates: number,
     total: number,
     categoryBreakdown?: Record<string, CategoryBreakdown>,
-    skippedInfo?: string
+    skippedInfo?: string,
+    aiFallbackCount?: number
   ): Promise<TelegramMessage> {
     let text = `📊 Import CSV zakonczony:
 ✅ Utworzono: ${created}
@@ -104,6 +105,11 @@ export class TelegramService {
     // Add skipped info if provided
     if (skippedInfo) {
       text += `\n🚫 ${skippedInfo}`;
+    }
+
+    // Add AI fallback warning if any
+    if (aiFallbackCount && aiFallbackCount > 0) {
+      text += `\n⚠️ ${aiFallbackCount} transakcji bez kategoryzacji AI (uzyte "Inne")`;
     }
 
     // Add category breakdown if provided

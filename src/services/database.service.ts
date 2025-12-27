@@ -126,6 +126,100 @@ export class DatabaseService {
     }
   }
 
+  // Optimized batch create with UNNEST - single INSERT for all rows
+  async createExpensesBatchOptimized(expenses: CreateExpenseInput[]): Promise<{
+    created: Expense[];
+    duplicates: string[];
+  }> {
+    if (expenses.length === 0) {
+      return { created: [], duplicates: [] };
+    }
+
+    const client = await this.pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const now = new Date().toISOString();
+
+      // Prepare all data with hashes upfront
+      const preparedData = expenses.map(e => ({
+        id: this.generateExpenseId(),
+        hash: this.generateHash(e),
+        date: e.date || now.split('T')[0],
+        amount: e.amount,
+        currency: e.currency || 'PLN',
+        category: e.category,
+        shop: e.shop,
+        user: e.user,
+        description: e.description || '',
+        source: e.source,
+        raw_input: e.raw_input || '',
+        receipt_id: e.receipt_id || null,
+      }));
+
+      // Check only the hashes we need (not all!)
+      const allHashes = preparedData.map(d => d.hash);
+      const existingHashes = await this.checkExistingHashes(client, allHashes);
+
+      // Filter duplicates locally
+      const toInsert = preparedData.filter(d => !existingHashes.has(d.hash));
+      const duplicateHashes = preparedData
+        .filter(d => existingHashes.has(d.hash))
+        .map(d => d.hash);
+
+      if (toInsert.length === 0) {
+        await client.query('COMMIT');
+        return { created: [], duplicates: duplicateHashes };
+      }
+
+      // SINGLE INSERT with UNNEST - one round trip for all rows!
+      const query = `
+        INSERT INTO expenses (
+          title, data, kwota, waluta, kategoria, sprzedawca,
+          user_name, opis, zrodlo, raw_input, status, hash, created_at, receipt_id
+        )
+        SELECT * FROM UNNEST(
+          $1::varchar[], $2::date[], $3::decimal[], $4::varchar[],
+          $5::varchar[], $6::varchar[], $7::varchar[], $8::text[],
+          $9::varchar[], $10::text[], $11::varchar[], $12::varchar[],
+          $13::timestamptz[], $14::varchar[]
+        )
+        ON CONFLICT (hash) DO NOTHING
+        RETURNING *
+      `;
+
+      const result = await client.query(query, [
+        toInsert.map(d => d.id),
+        toInsert.map(d => d.date),
+        toInsert.map(d => d.amount),
+        toInsert.map(d => d.currency),
+        toInsert.map(d => d.category),
+        toInsert.map(d => d.shop),
+        toInsert.map(d => d.user),
+        toInsert.map(d => d.description),
+        toInsert.map(d => d.source),
+        toInsert.map(d => d.raw_input),
+        toInsert.map(() => 'active'),
+        toInsert.map(d => d.hash),
+        toInsert.map(() => now),
+        toInsert.map(d => d.receipt_id),
+      ]);
+
+      await client.query('COMMIT');
+
+      return {
+        created: result.rows.map(row => this.mapToExpense(row)),
+        duplicates: duplicateHashes,
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   // Check if hash exists
   async hashExists(hash: string): Promise<boolean> {
     const query = 'SELECT 1 FROM expenses WHERE hash = $1 LIMIT 1';
@@ -490,12 +584,24 @@ export class DatabaseService {
     return new Set(result.rows.map((row: { hash: string }) => row.hash));
   }
 
+  // Optimized: check only specific hashes instead of loading all
+  private async checkExistingHashes(
+    client: pg.PoolClient,
+    hashes: string[]
+  ): Promise<Set<string>> {
+    if (hashes.length === 0) return new Set();
+
+    const query = 'SELECT hash FROM expenses WHERE hash = ANY($1)';
+    const result = await client.query(query, [hashes]);
+    return new Set(result.rows.map((row: { hash: string }) => row.hash));
+  }
+
   private generateExpenseId(): string {
     const now = new Date();
     const date = now.toISOString().slice(0, 10).replace(/-/g, '');
-    const time = now.toISOString().slice(11, 23).replace(/[:.]/g, '');
-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    return `exp_${date}_${time}_${random}`;
+    // crypto.randomUUID() guarantees uniqueness even in parallel batch inserts
+    const uuid = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+    return `exp_${date}_${uuid}`;
   }
 
   private generateHash(expense: CreateExpenseInput): string {
@@ -883,6 +989,11 @@ export class DatabaseService {
     await this.pool.query('CREATE INDEX IF NOT EXISTS idx_expenses_kategoria ON expenses(kategoria)');
     await this.pool.query('CREATE INDEX IF NOT EXISTS idx_expenses_user ON expenses(user_name)');
     await this.pool.query('CREATE INDEX IF NOT EXISTS idx_expenses_hash ON expenses(hash)');
+    // UNIQUE constraint for ON CONFLICT (needed for batch insert optimization)
+    await this.pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_expenses_hash_unique
+      ON expenses(hash) WHERE hash IS NOT NULL
+    `);
     console.log('[Database] ✓ expenses table ready');
 
     // 002_audit_log.sql

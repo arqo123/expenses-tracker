@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import type { TelegramMessage } from '../types/telegram.types.ts';
 import { getUserName } from './webhook.handler.ts';
 import { parseCSV, formatSkippedStats } from '../parsers/csv/index.ts';
+import { classifyDatabaseError, classifyError } from '../utils/error-classifier.ts';
 
 const MAX_CSV_SIZE = 5 * 1024 * 1024; // 5 MB
 
@@ -112,8 +113,9 @@ export async function csvHandler(c: Context, message: TelegramMessage): Promise<
 
     console.log(`[CSVHandler] Forced categories: ${forcedCategorized.length}, needing AI: ${batchItems.length}`);
 
-    // Categorize in batches of 50
+    // Categorize in batches of 50, process up to 3 batches concurrently
     const BATCH_SIZE = 50;
+    const CONCURRENCY_LIMIT = 3;
     const aiCategorized: Array<{
       idx: number;
       shop: string;
@@ -122,30 +124,42 @@ export async function csvHandler(c: Context, message: TelegramMessage): Promise<
       confidence: number;
     }> = [];
 
+    // Split into batches
+    const batches: typeof batchItems[] = [];
     for (let i = 0; i < batchItems.length; i += BATCH_SIZE) {
-      const batch = batchItems.slice(i, i + BATCH_SIZE);
-      try {
-        const categorized = await aiCategorizer.categorizeBatch(batch);
-        aiCategorized.push(...categorized);
-      } catch (error) {
-        console.error(`[CSVHandler] Batch ${i / BATCH_SIZE} failed:`, error);
-        // Fallback: use original data with "Inne" category
-        for (const item of batch) {
-          const tx = parseResult.transactions[item.idx];
-          if (tx) {
-            aiCategorized.push({
-              idx: item.idx,
-              shop: tx.merchant,
-              category: 'Inne',
-              amount: tx.amount,
-              confidence: 0,
+      batches.push(batchItems.slice(i, i + BATCH_SIZE));
+    }
+
+    // Process batches concurrently (max CONCURRENCY_LIMIT at a time)
+    for (let i = 0; i < batches.length; i += CONCURRENCY_LIMIT) {
+      const batchGroup = batches.slice(i, i + CONCURRENCY_LIMIT);
+
+      const results = await Promise.all(
+        batchGroup.map(async (batch) => {
+          try {
+            return await aiCategorizer.categorizeBatch(batch);
+          } catch (error) {
+            console.error(`[CSVHandler] Batch failed:`, error);
+            // Fallback: use original data with "Inne" category
+            return batch.map(item => {
+              const tx = parseResult.transactions[item.idx];
+              return {
+                idx: item.idx,
+                shop: tx?.merchant || 'Unknown',
+                category: 'Inne' as const,
+                amount: tx?.amount || 0,
+                confidence: 0,
+              };
             });
           }
-        }
-      }
+        })
+      );
 
-      // Update progress every 30 seconds
-      await updateProgress(Math.min(i + BATCH_SIZE, batchItems.length));
+      aiCategorized.push(...results.flat());
+
+      // Update progress
+      const processed = Math.min((i + CONCURRENCY_LIMIT) * BATCH_SIZE, batchItems.length);
+      await updateProgress(processed);
     }
 
     // Combine forced + AI categorized
@@ -165,7 +179,39 @@ export async function csvHandler(c: Context, message: TelegramMessage): Promise<
       };
     });
 
-    const { created, duplicates } = await database.createExpensesBatch(expensesToCreate);
+    // Count AI fallbacks (items that couldn't be categorized by AI)
+    const aiFallbackCount = aiCategorized.filter(c => c.confidence === 0).length;
+
+    let created: Awaited<ReturnType<typeof database.createExpensesBatchOptimized>>['created'];
+    let duplicates: Awaited<ReturnType<typeof database.createExpensesBatchOptimized>>['duplicates'];
+
+    try {
+      const result = await database.createExpensesBatchOptimized(expensesToCreate);
+      created = result.created;
+      duplicates = result.duplicates;
+    } catch (dbError) {
+      const errorInfo = classifyDatabaseError(dbError);
+
+      console.error('[CSVHandler] Database error:', {
+        type: errorInfo.type,
+        technicalDetail: errorInfo.technicalDetail,
+        transactionsCount: expensesToCreate.length,
+        retryable: errorInfo.retryable,
+      });
+
+      // Clean up progress message
+      try {
+        await telegram.deleteMessage(chatId, progressMsgId);
+      } catch {
+        // Ignore
+      }
+
+      // Send user-friendly error message
+      const retryHint = errorInfo.retryable ? ' Możesz spróbować ponownie.' : '';
+      await telegram.sendError(chatId, `${errorInfo.userMessage}${retryHint}`);
+
+      return c.json({ ok: false, error: errorInfo.type }, 500);
+    }
 
     // Aggregate categories for summary
     const categoryBreakdown: Record<string, { count: number; amount: number }> = {};
@@ -195,7 +241,8 @@ export async function csvHandler(c: Context, message: TelegramMessage): Promise<
       duplicates.length,
       parseResult.transactions.length,
       categoryBreakdown,
-      skippedInfo
+      skippedInfo,
+      aiFallbackCount
     );
 
     // Audit log
@@ -219,8 +266,17 @@ export async function csvHandler(c: Context, message: TelegramMessage): Promise<
       duplicates: duplicates.length,
     });
   } catch (error) {
-    console.error('[CSVHandler] Error:', error);
-    await telegram.sendError(chatId, 'Blad przetwarzania pliku CSV.');
-    return c.json({ ok: false }, 500);
+    const errorInfo = classifyError(error);
+
+    console.error('[CSVHandler] Error:', {
+      type: errorInfo.type,
+      technicalDetail: errorInfo.technicalDetail,
+      retryable: errorInfo.retryable,
+    });
+
+    const retryHint = errorInfo.retryable ? ' Mozesz sprobowac ponownie.' : '';
+    await telegram.sendError(chatId, `${errorInfo.userMessage}${retryHint}`);
+
+    return c.json({ ok: false, error: errorInfo.type }, 500);
   }
 }
