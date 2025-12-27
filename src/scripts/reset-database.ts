@@ -228,6 +228,7 @@ async function resetDatabase() {
         added_by VARCHAR(50) NOT NULL,
         is_checked BOOLEAN DEFAULT false,
         priority INTEGER DEFAULT 0,
+        emoji VARCHAR(10) DEFAULT '📦',
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);

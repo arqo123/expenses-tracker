@@ -1021,12 +1021,17 @@ export class DatabaseService {
         added_by VARCHAR(50) NOT NULL,
         is_checked BOOLEAN DEFAULT false,
         priority INTEGER DEFAULT 0,
+        emoji VARCHAR(10) DEFAULT '📦',
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
     await this.pool.query('CREATE INDEX IF NOT EXISTS idx_shopping_items_list ON shopping_items(list_id)');
     await this.pool.query('CREATE INDEX IF NOT EXISTS idx_shopping_items_checked ON shopping_items(is_checked)');
     await this.pool.query('CREATE INDEX IF NOT EXISTS idx_shopping_items_category ON shopping_items(shop_category)');
+    // Add emoji column if missing (for existing tables)
+    await this.pool.query(`
+      ALTER TABLE shopping_items ADD COLUMN IF NOT EXISTS emoji VARCHAR(10) DEFAULT '📦'
+    `);
     console.log('[Database] ✓ shopping_items table ready');
 
     await this.pool.query(`
