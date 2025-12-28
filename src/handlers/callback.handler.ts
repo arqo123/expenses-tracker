@@ -4,6 +4,8 @@ import { getUserName } from './webhook.handler.ts';
 import { EXPENSE_CATEGORIES, CATEGORY_EMOJI, type ExpenseCategory } from '../types/expense.types.ts';
 import { menuHandler } from './menu.handler.ts';
 import { shoppingCallbackHandler } from './shopping-callback.handler.ts';
+import { AddressLearningService } from '../services/address-learning.service.ts';
+import { normalizeShopName } from '../config/merchant-aliases.ts';
 
 export async function callbackHandler(
   c: Context,
@@ -373,6 +375,117 @@ export async function callbackHandler(
         }
 
         await telegram.answerCallbackQuery(callbackQuery.id);
+        return c.json({ ok: true });
+      }
+
+      // ===== ADDRESS LEARNING CALLBACKS =====
+      case 'addr': {
+        const addressLearning = new AddressLearningService(database.getPool());
+        const [subAction, ...rest] = param.split(':');
+
+        // Get user state with address info
+        const state = await addressLearning.getUserState(userName, 'address_learn');
+
+        // Handle custom input request: addr:custom:sessionId
+        if (subAction === 'custom') {
+          if (!state) {
+            await telegram.answerCallbackQuery(callbackQuery.id, 'Sesja wygasła');
+            if (chatId && messageId) {
+              await telegram.deleteMessage(chatId, messageId);
+            }
+            return c.json({ ok: true });
+          }
+
+          // Update state to indicate we're waiting for custom input
+          await addressLearning.saveUserState(userName, 'address_learn_custom', {
+            ...state.stateData,
+            waitingForInput: true,
+          });
+
+          await telegram.answerCallbackQuery(callbackQuery.id);
+          if (chatId) {
+            const addressText = (state.stateData.address as string || '').slice(0, 40);
+            await telegram.sendMessage({
+              chat_id: chatId,
+              text: `✏️ Wpisz nazwę sklepu dla adresu:\n_${addressText}_`,
+              parse_mode: 'Markdown',
+            });
+          }
+
+          // Delete the buttons message
+          if (chatId && messageId) {
+            await telegram.deleteMessage(chatId, messageId);
+          }
+
+          return c.json({ ok: true });
+        }
+
+        // Handle skip: addr:skip:sessionId
+        if (subAction === 'skip') {
+          // Clear state
+          await addressLearning.clearUserState(userName, 'address_learn');
+          await addressLearning.clearUserState(userName, 'address_learn_custom');
+
+          await telegram.answerCallbackQuery(callbackQuery.id, 'Pominięto');
+          if (chatId && messageId) {
+            await telegram.deleteMessage(chatId, messageId);
+          }
+
+          return c.json({ ok: true });
+        }
+
+        // Handle store selection: addr:sessionId:StoreName
+        // subAction is the sessionId (unused, but part of callback_data format)
+        const merchantName = rest.join(':');
+
+        if (!state || !merchantName) {
+          await telegram.answerCallbackQuery(callbackQuery.id, 'Sesja wygasła');
+          if (chatId && messageId) {
+            await telegram.deleteMessage(chatId, messageId);
+          }
+          return c.json({ ok: true });
+        }
+
+        const address = state.stateData.address as string;
+        const expenseIds = state.stateData.expenseIds as string[];
+
+        // Normalize merchant name
+        const normalizedMerchant = normalizeShopName(merchantName);
+
+        // Save the learning
+        await addressLearning.learnAddress(address, normalizedMerchant, userName);
+
+        // Update recent expenses with the new merchant name
+        if (expenseIds && expenseIds.length > 0) {
+          for (const expenseId of expenseIds) {
+            await database.getPool().query(
+              `UPDATE expenses SET sprzedawca = $1 WHERE title = $2`,
+              [normalizedMerchant, expenseId]
+            );
+          }
+        }
+
+        // Clear state
+        await addressLearning.clearUserState(userName, 'address_learn');
+
+        await telegram.answerCallbackQuery(callbackQuery.id, `Zapamiętano: ${normalizedMerchant}`);
+        if (chatId && messageId) {
+          const addressText = address.slice(0, 35);
+          await telegram.editMessage(
+            chatId,
+            messageId,
+            `✅ Zapamiętano:\n📍 _${addressText}_\n🏪 → *${normalizedMerchant}*`,
+            'Markdown'
+          );
+        }
+
+        await database.createAuditLog(
+          'ADDRESS_LEARN',
+          { address, merchant: normalizedMerchant, expense_count: expenseIds?.length || 0 },
+          userName
+        );
+
+        console.log(`[CallbackHandler] Learned address: ${address} → ${normalizedMerchant}`);
         return c.json({ ok: true });
       }
 

@@ -917,7 +917,8 @@ export class DatabaseService {
     const requiredTables = [
       'expenses', 'audit_log', 'idempotency', 'merchants',
       'product_learnings', 'pending_receipts',
-      'shopping_lists', 'shopping_items', 'shopping_stats'
+      'shopping_lists', 'shopping_items', 'shopping_stats',
+      'address_learnings', 'user_states'
     ];
 
     const tablesResult = await this.pool.query(`
@@ -951,6 +952,8 @@ export class DatabaseService {
 
       // Drop all tables and recreate
       await this.pool.query(`
+        DROP TABLE IF EXISTS user_states CASCADE;
+        DROP TABLE IF EXISTS address_learnings CASCADE;
         DROP TABLE IF EXISTS shopping_items CASCADE;
         DROP TABLE IF EXISTS shopping_lists CASCADE;
         DROP TABLE IF EXISTS shopping_stats CASCADE;
@@ -989,10 +992,17 @@ export class DatabaseService {
     await this.pool.query('CREATE INDEX IF NOT EXISTS idx_expenses_kategoria ON expenses(kategoria)');
     await this.pool.query('CREATE INDEX IF NOT EXISTS idx_expenses_user ON expenses(user_name)');
     await this.pool.query('CREATE INDEX IF NOT EXISTS idx_expenses_hash ON expenses(hash)');
-    // UNIQUE constraint for ON CONFLICT (needed for batch insert optimization)
+    // UNIQUE constraint for ON CONFLICT (needed for batch insert deduplication)
+    // Note: ON CONFLICT requires actual CONSTRAINT, not just unique index
     await this.pool.query(`
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_expenses_hash_unique
-      ON expenses(hash) WHERE hash IS NOT NULL
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'unique_hash'
+        ) THEN
+          ALTER TABLE expenses ADD CONSTRAINT unique_hash UNIQUE (hash);
+        END IF;
+      END $$;
     `);
     console.log('[Database] ✓ expenses table ready');
 
@@ -1208,6 +1218,42 @@ export class DatabaseService {
     await this.pool.query('ALTER TABLE shopping_stats ADD COLUMN IF NOT EXISTS shops TEXT[]');
     await this.pool.query('CREATE INDEX IF NOT EXISTS idx_shopping_stats_source ON shopping_stats(source)');
     console.log('[Database] ✓ shopping_stats extended columns ready');
+
+    // 011_address_learnings.sql - for learning store names from addresses
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS address_learnings (
+        id SERIAL PRIMARY KEY,
+        raw_address TEXT NOT NULL,
+        normalized_address VARCHAR(500) NOT NULL UNIQUE,
+        city VARCHAR(100),
+        street VARCHAR(200),
+        merchant_name VARCHAR(255) NOT NULL,
+        usage_count INTEGER DEFAULT 1,
+        user_name VARCHAR(50),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_addr_normalized ON address_learnings(normalized_address)');
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_addr_city_street ON address_learnings(city, street)');
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_addr_merchant ON address_learnings(merchant_name)');
+    console.log('[Database] ✓ address_learnings table ready');
+
+    // 012_user_states.sql - for temporary user states (e.g., waiting for store name input)
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS user_states (
+        id SERIAL PRIMARY KEY,
+        user_name VARCHAR(50) NOT NULL,
+        state_type VARCHAR(50) NOT NULL,
+        state_data JSONB NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        expires_at TIMESTAMPTZ DEFAULT NOW() + INTERVAL '5 minutes',
+        UNIQUE(user_name, state_type)
+      )
+    `);
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_user_states_user ON user_states(user_name)');
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_user_states_expires ON user_states(expires_at)');
+    console.log('[Database] ✓ user_states table ready');
 
     console.log('[Database] All migrations completed successfully!');
   }

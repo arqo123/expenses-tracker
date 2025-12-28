@@ -281,10 +281,58 @@ OUTPUT (TYLKO JSON array):
 Przeanalizuj obraz paragonu/rachunku/screenshota zamowienia.
 
 WYCIĄGNIJ:
-1. Nazwę sklepu/restauracji (source)
-2. Typ sklepu (store_type): grocery, veterinary, pharmacy, restaurant, electronics, clothing, home, pet_store, other
-3. Produkty z cenami NETTO (po rabatach) I KATEGORIAMI
-4. Typ obrazu: "receipt" lub "ecommerce"
+1. Nazwę sklepu/restauracji (source) - WAŻNE: rozpoznaj po nazwie, logo, lub kontekście
+2. Adres sklepu (address) - jeśli widoczny (miasto, ulica, numer, kod pocztowy)
+3. Typ sklepu (store_type): grocery, veterinary, pharmacy, restaurant, electronics, clothing, home, pet_store, other
+4. Produkty z cenami NETTO (po rabatach) I KATEGORIAMI
+5. Typ obrazu: "receipt" lub "ecommerce"
+
+=== ROZPOZNAWANIE NAZWY SKLEPU ===
+POLSKIE SKLEPY SPOŻYWCZE (rozpoznaj nawet po fragmentach nazwy):
+- Biedronka, Lidl, Żabka, Kaufland, Carrefour, Auchan, Dino, Stokrotka
+- Netto, Lewiatan, Polo Market, Polomarket, Topaz, Mila, Chata Polska
+- Delikatesy Centrum, Intermarché, E.Leclerc, Aldi, Społem, Piotr i Paweł
+- Freshmarket, Groszek, ABC, Małpka Express, Odido
+
+DROGERIE I APTEKI:
+- Rossmann, Hebe, Super-Pharm, Natura, Drogeria Laboo, DOZ Apteka
+
+MARKETY BUDOWLANE:
+- Castorama, Leroy Merlin, OBI, Bricomarché, Mrówka, PSB, Praktiker
+
+ELEKTRONIKA:
+- Media Expert, RTV Euro AGD, x-kom, Media Markt, Komputronik, Saturn, Neonet
+
+INNE SIECI:
+- Pepco, Action, KiK, TK Maxx, Half Price, Flying Tiger, Dealz, Tiger, Tedi
+- Jysk, IKEA, Agata Meble, Black Red White, Abra, Komfort
+
+E-COMMERCE (screenshoty zamówień):
+- Allegro, Amazon, AliExpress, Temu, Shein, Zalando, Modivo, eobuwie
+- OLX, Vinted, Facebook Marketplace
+
+HURTOWNIE:
+- Selgros, Makro, Eurocash
+
+STACJE PALIW:
+- Orlen, BP, Shell, Circle K, Moya, Amic, Lotos
+
+=== ROZRÓŻNIANIE NAZWY OD ADRESU ===
+- Nazwa sklepu to zazwyczaj krótka nazwa/brand (np. "Lidl", "Biedronka", "Żabka")
+- Adres zawiera miasto, ulicę, numer, kod pocztowy
+- Jeśli widzisz TYLKO adres bez nazwy sklepu → source: "", address: "pełny adres"
+- Jeśli widzisz nazwę I adres → source: "nazwa", address: "adres"
+- Jeśli to e-commerce screenshot (Allegro, Amazon, Temu) → source: "Allegro", address: null
+
+PRZYKŁADY:
+1. Paragon z "RZESZÓW, KWIATKOWSKIEGO 46, 20-952" bez widocznej nazwy:
+   → source: "", address: "RZESZÓW, KWIATKOWSKIEGO 46, 20-952"
+
+2. Paragon z "Lidl Sp. z o.o.\nul. Kwiatkowskiego 46\n35-952 Rzeszów":
+   → source: "Lidl", address: "ul. Kwiatkowskiego 46, 35-952 Rzeszów"
+
+3. Screenshot zamówienia Allegro:
+   → source: "Allegro", address: null (e-commerce nie ma adresu sklepu)
 
 KRYTYCZNE - OBSŁUGA RABATÓW:
 1. Znajdź KOŃCOWĄ SUMĘ z paragonu (np. "Razem", "SUMA", "Do zapłaty") - to jest wartość "total"
@@ -321,6 +369,7 @@ KATEGORYZACJA PRODUKTÓW:
   - Karma dla zwierząt → "Zwierzeta"
   - Leki, suplementy → "Zdrowie"
   - Artykuły dziecięce (pieluchy, przeciery owocowe dla dzieci) → "Dzieci"
+- Dla e-commerce (Allegro, Amazon, Temu) → kategoryzuj KAŻDY produkt indywidualnie!
 
 DOSTĘPNE KATEGORIE:
 Zakupy spozywcze, Restauracje, Delivery, Kawiarnie, Transport, Paliwo, Auto, Dom,
@@ -331,6 +380,7 @@ OUTPUT (TYLKO JSON):
 {
   "image_type": "receipt",
   "source": "Lidl",
+  "address": "ul. Kwiatkowskiego 46, 35-952 Rzeszów",
   "store_type": "grocery",
   "products": [
     {"name": "Mleko UHT 3.2%", "price": 5.59, "category": "Zakupy spozywcze"},

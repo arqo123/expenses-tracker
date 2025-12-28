@@ -4,8 +4,16 @@ import { getUserName } from './webhook.handler.ts';
 import { CATEGORY_EMOJI, type ExpenseCategory } from '../types/expense.types.ts';
 import { ReceiptMatcherService } from '../services/receipt-matcher.service.ts';
 import { ShoppingDatabaseService } from '../services/shopping-database.service.ts';
+import { AddressLearningService } from '../services/address-learning.service.ts';
 
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
+
+// Popular Polish stores for quick selection buttons
+const POPULAR_STORES = [
+  ['Biedronka', 'Lidl', 'Żabka'],
+  ['Kaufland', 'Dino', 'Auchan'],
+  ['Rossmann', 'Stokrotka', 'Lewiatan'],
+];
 
 export async function imageHandler(c: Context, message: TelegramMessage): Promise<Response> {
   const telegram = c.get('telegram');
@@ -53,6 +61,31 @@ export async function imageHandler(c: Context, message: TelegramMessage): Promis
     // OCR with AI Vision
     console.log(`[ImageHandler] Running OCR (${imageBuffer.byteLength} bytes)`);
     const visionResult = await aiCategorizer.categorizeImage(base64, mimeType);
+
+    // ===== ADDRESS LEARNING: Handle unknown merchants =====
+    let shouldAskForStoreName = false;
+    let extractedAddress: string | undefined;
+    const addressLearning = new AddressLearningService(database.getPool());
+
+    // Check if source is empty/unknown but we have an address
+    const sourceIsUnknown = !visionResult.source || visionResult.source === '' || visionResult.source.toLowerCase() === 'unknown';
+
+    if (sourceIsUnknown && visionResult.address) {
+      extractedAddress = visionResult.address;
+      console.log(`[ImageHandler] Unknown merchant, checking address: ${extractedAddress}`);
+
+      // Try to find merchant by address in learned database
+      const learnedAddress = await addressLearning.findMerchantByAddress(extractedAddress);
+
+      if (learnedAddress) {
+        console.log(`[ImageHandler] Found learned address: ${extractedAddress} → ${learnedAddress.merchantName}`);
+        visionResult.source = learnedAddress.merchantName;
+      } else {
+        console.log(`[ImageHandler] Unknown address, will ask user: ${extractedAddress}`);
+        visionResult.source = 'Nieznany sklep';
+        shouldAskForStoreName = true;
+      }
+    }
 
     if (!visionResult.products || visionResult.products.length === 0) {
       await telegram.sendError(
@@ -317,6 +350,48 @@ export async function imageHandler(c: Context, message: TelegramMessage): Promis
     );
 
     console.log(`[ImageHandler] Created ${createdExpenses.length} expenses, ${duplicates.length} duplicates from image`);
+
+    // ===== ASK USER ABOUT UNKNOWN ADDRESS =====
+    if (shouldAskForStoreName && extractedAddress && createdExpenses.length > 0) {
+      // Generate session ID for this address learning request
+      const sessionId = crypto.randomUUID().slice(0, 8);
+
+      // Save state for potential custom input
+      await addressLearning.saveUserState(userName, 'address_learn', {
+        sessionId,
+        address: extractedAddress,
+        receiptId,
+        expenseIds: createdExpenses,
+      });
+
+      const addressText = extractedAddress.length > 50
+        ? extractedAddress.slice(0, 47) + '...'
+        : extractedAddress;
+
+      // Build keyboard with popular stores + custom option
+      const storeButtons = POPULAR_STORES.map(row =>
+        row.map(store => ({
+          text: store,
+          callback_data: `addr:${sessionId}:${store}`,
+        }))
+      );
+
+      // Add custom input and skip buttons
+      storeButtons.push([
+        { text: '✏️ Inna nazwa...', callback_data: `addr:custom:${sessionId}` },
+        { text: '❌ Pomiń', callback_data: `addr:skip:${sessionId}` },
+      ]);
+
+      await telegram.sendMessage({
+        chat_id: chatId,
+        text: `📍 *Nie rozpoznano sklepu*\n\nAdres: _${addressText}_\n\nJaki to sklep?`,
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: storeButtons },
+      });
+
+      console.log(`[ImageHandler] Asked user about unknown address: ${extractedAddress}`);
+    }
+
     return c.json({ ok: true, expenses: createdExpenses });
   } catch (error) {
     console.error('[ImageHandler] Error:', error);

@@ -75,7 +75,7 @@ export function classifyDatabaseError(error: unknown): ClassifiedError {
         retryable: true,
       };
     }
-    if (constraint === 'idx_expenses_hash_unique' || constraint?.includes('hash')) {
+    if (constraint === 'unique_hash' || constraint === 'idx_expenses_hash_unique' || constraint?.includes('hash')) {
       return {
         type: 'duplicate_key',
         userMessage: 'Te transakcje już istnieją w bazie (wykryto duplikaty).',
@@ -157,6 +157,16 @@ export function classifyDatabaseError(error: unknown): ClassifiedError {
       type: 'validation',
       userMessage: 'Nieprawidłowe dane w transakcjach. Sprawdź format pliku CSV.',
       technicalDetail: `Check constraint violation: ${detail}`,
+      retryable: false,
+    };
+  }
+
+  // ON CONFLICT constraint missing (schema mismatch)
+  if (err.message?.includes('no unique or exclusion constraint matching')) {
+    return {
+      type: 'constraint',
+      userMessage: 'Błąd konfiguracji bazy danych. Skontaktuj się z administratorem (wymagana migracja).',
+      technicalDetail: `Missing constraint for ON CONFLICT: ${err.message}`,
       retryable: false,
     };
   }

@@ -106,6 +106,7 @@ export type StoreType = 'grocery' | 'veterinary' | 'pharmacy' | 'restaurant' | '
 export interface VisionResult {
   image_type: 'receipt' | 'ecommerce';
   source: string;
+  address?: string;  // Store address (when source/name is not visible on receipt)
   store_type?: StoreType;
   products: Array<{
     name: string;

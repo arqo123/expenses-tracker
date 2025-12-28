@@ -2,6 +2,8 @@ import type { Context } from 'hono';
 import type { TelegramMessage } from '../types/telegram.types.ts';
 import { getUserName } from './webhook.handler.ts';
 import { parseExpenseText } from '../parsers/text.parser.ts';
+import { AddressLearningService } from '../services/address-learning.service.ts';
+import { normalizeShopName } from '../config/merchant-aliases.ts';
 
 export async function textHandler(c: Context, message: TelegramMessage): Promise<Response> {
   const aiCategorizer = c.get('aiCategorizer');
@@ -11,6 +13,62 @@ export async function textHandler(c: Context, message: TelegramMessage): Promise
   const chatId = message.chat.id;
   const text = message.text!.trim();
   const userName = getUserName(chatId, message.from.first_name);
+
+  // ===== CHECK FOR PENDING ADDRESS LEARNING (custom store name input) =====
+  const addressLearning = new AddressLearningService(database.getPool());
+  const customState = await addressLearning.getUserState(userName, 'address_learn_custom');
+
+  if (customState && customState.stateData.waitingForInput) {
+    // User is providing a custom store name
+    const merchantName = text.trim();
+
+    // Validate input
+    if (merchantName.length < 2 || merchantName.length > 100) {
+      await telegram.sendMessage({
+        chat_id: chatId,
+        text: '❌ Nazwa sklepu musi mieć od 2 do 100 znaków. Spróbuj ponownie:',
+      });
+      return c.json({ ok: true });
+    }
+
+    const address = customState.stateData.address as string;
+    const expenseIds = customState.stateData.expenseIds as string[];
+
+    // Normalize and save the learning
+    const normalizedMerchant = normalizeShopName(merchantName);
+    await addressLearning.learnAddress(address, normalizedMerchant, userName);
+
+    // Update recent expenses with the new merchant name
+    if (expenseIds && expenseIds.length > 0) {
+      for (const expenseId of expenseIds) {
+        await database.getPool().query(
+          `UPDATE expenses SET sprzedawca = $1 WHERE title = $2`,
+          [normalizedMerchant, expenseId]
+        );
+      }
+    }
+
+    // Clear states
+    await addressLearning.clearUserState(userName, 'address_learn');
+    await addressLearning.clearUserState(userName, 'address_learn_custom');
+
+    // Send confirmation
+    const addressText = address.slice(0, 35);
+    await telegram.sendMessage({
+      chat_id: chatId,
+      text: `✅ Zapamiętano:\n📍 _${addressText}_\n🏪 → *${normalizedMerchant}*`,
+      parse_mode: 'Markdown',
+    });
+
+    await database.createAuditLog(
+      'ADDRESS_LEARN',
+      { address, merchant: normalizedMerchant, expense_count: expenseIds?.length || 0, source: 'custom_input' },
+      userName
+    );
+
+    console.log(`[TextHandler] Learned custom address: ${address} → ${normalizedMerchant}`);
+    return c.json({ ok: true });
+  }
 
   try {
     // Try simple parsing (optional - AI will do the heavy lifting)
