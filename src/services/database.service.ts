@@ -1184,7 +1184,254 @@ export class DatabaseService {
     await this.pool.query('CREATE INDEX IF NOT EXISTS idx_expenses_user_receipt ON expenses(user_name, receipt_id, created_at DESC)');
     console.log('[Database] ✓ receipt_id column ready');
 
+    // 009_product_correlations.sql - for tracking products bought together
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS product_correlations (
+        id SERIAL PRIMARY KEY,
+        product_a VARCHAR(255) NOT NULL,
+        product_b VARCHAR(255) NOT NULL,
+        co_occurrences INTEGER DEFAULT 1,
+        correlation DECIMAL(4,3) DEFAULT 0,
+        last_updated TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(product_a, product_b)
+      )
+    `);
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_corr_product_a ON product_correlations(product_a)');
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_corr_product_b ON product_correlations(product_b)');
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_corr_cooccurrences ON product_correlations(co_occurrences DESC)');
+    console.log('[Database] ✓ product_correlations table ready');
+
+    // 010_shopping_stats_extended.sql - extend shopping_stats with additional fields
+    await this.pool.query('ALTER TABLE shopping_stats ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT \'shopping_list\'');
+    await this.pool.query('ALTER TABLE shopping_stats ADD COLUMN IF NOT EXISTS avg_price DECIMAL(12,2)');
+    await this.pool.query('ALTER TABLE shopping_stats ADD COLUMN IF NOT EXISTS category VARCHAR(50)');
+    await this.pool.query('ALTER TABLE shopping_stats ADD COLUMN IF NOT EXISTS shops TEXT[]');
+    await this.pool.query('CREATE INDEX IF NOT EXISTS idx_shopping_stats_source ON shopping_stats(source)');
+    console.log('[Database] ✓ shopping_stats extended columns ready');
+
     console.log('[Database] All migrations completed successfully!');
+  }
+
+  // =====================================================
+  // SUGGESTION ENGINE - SQL Methods
+  // =====================================================
+
+  // Get products from receipt OCR (telegram_image source)
+  async getProductsFromReceipts(limit: number = 50): Promise<Array<{
+    productName: string;
+    purchaseCount: number;
+    avgPrice: number;
+    lastBoughtAt: string;
+    shops: string[];
+    category: string;
+  }>> {
+    const result = await this.pool.query(
+      `SELECT
+        opis as product_name,
+        COUNT(*) as purchase_count,
+        AVG(kwota)::DECIMAL(12,2) as avg_price,
+        MAX(data)::TEXT as last_bought_at,
+        ARRAY_AGG(DISTINCT sprzedawca) as shops,
+        kategoria as category
+      FROM expenses
+      WHERE zrodlo = 'telegram_image'
+        AND opis IS NOT NULL
+        AND opis != ''
+        AND status = 'active'
+      GROUP BY opis, kategoria
+      ORDER BY purchase_count DESC
+      LIMIT $1`,
+      [limit]
+    );
+
+    return result.rows.map((row) => ({
+      productName: row.product_name,
+      purchaseCount: parseInt(row.purchase_count, 10),
+      avgPrice: parseFloat(row.avg_price) || 0,
+      lastBoughtAt: row.last_bought_at,
+      shops: row.shops || [],
+      category: row.category,
+    }));
+  }
+
+  // Get products typically bought at a specific store
+  async getStoreProducts(storeName: string, limit: number = 20): Promise<Array<{
+    productName: string;
+    purchaseCount: number;
+    avgPrice: number;
+    category: string;
+  }>> {
+    const result = await this.pool.query(
+      `SELECT
+        opis as product_name,
+        COUNT(*) as purchase_count,
+        AVG(kwota)::DECIMAL(12,2) as avg_price,
+        kategoria as category
+      FROM expenses
+      WHERE sprzedawca ILIKE $1
+        AND opis IS NOT NULL
+        AND opis != ''
+        AND status = 'active'
+      GROUP BY opis, kategoria
+      ORDER BY purchase_count DESC
+      LIMIT $2`,
+      [`%${storeName}%`, limit]
+    );
+
+    return result.rows.map((row) => ({
+      productName: row.product_name,
+      purchaseCount: parseInt(row.purchase_count, 10),
+      avgPrice: parseFloat(row.avg_price) || 0,
+      category: row.category,
+    }));
+  }
+
+  // Get top stores by product count
+  async getTopStores(limit: number = 10): Promise<Array<{
+    storeName: string;
+    productCount: number;
+    transactionCount: number;
+  }>> {
+    const result = await this.pool.query(
+      `SELECT
+        sprzedawca as store_name,
+        COUNT(DISTINCT opis) as product_count,
+        COUNT(*) as transaction_count
+      FROM expenses
+      WHERE zrodlo = 'telegram_image'
+        AND opis IS NOT NULL
+        AND opis != ''
+        AND status = 'active'
+      GROUP BY sprzedawca
+      ORDER BY transaction_count DESC
+      LIMIT $1`,
+      [limit]
+    );
+
+    return result.rows.map((row) => ({
+      storeName: row.store_name,
+      productCount: parseInt(row.product_count, 10),
+      transactionCount: parseInt(row.transaction_count, 10),
+    }));
+  }
+
+  // Get correlated products (bought together on same receipt)
+  async getCorrelatedProducts(productNames: string[], limit: number = 10): Promise<Array<{
+    productName: string;
+    coOccurrences: number;
+    correlation: number;
+  }>> {
+    if (productNames.length === 0) {
+      return [];
+    }
+
+    const result = await this.pool.query(
+      `WITH target_receipts AS (
+        SELECT DISTINCT receipt_id
+        FROM expenses
+        WHERE opis = ANY($1)
+          AND receipt_id IS NOT NULL
+          AND status = 'active'
+      ),
+      total_receipts AS (
+        SELECT COUNT(*) as cnt FROM target_receipts
+      )
+      SELECT
+        e.opis as product_name,
+        COUNT(DISTINCT e.receipt_id) as co_occurrences,
+        (COUNT(DISTINCT e.receipt_id)::DECIMAL / GREATEST((SELECT cnt FROM total_receipts), 1)) as correlation
+      FROM expenses e
+      JOIN target_receipts tr ON e.receipt_id = tr.receipt_id
+      WHERE e.opis NOT IN (SELECT UNNEST($1::TEXT[]))
+        AND e.opis IS NOT NULL
+        AND e.opis != ''
+        AND e.status = 'active'
+      GROUP BY e.opis
+      HAVING COUNT(DISTINCT e.receipt_id) >= 2
+      ORDER BY correlation DESC, co_occurrences DESC
+      LIMIT $2`,
+      [productNames, limit]
+    );
+
+    return result.rows.map((row) => ({
+      productName: row.product_name,
+      coOccurrences: parseInt(row.co_occurrences, 10),
+      correlation: parseFloat(row.correlation) || 0,
+    }));
+  }
+
+  // Update product correlations table for a receipt
+  async updateProductCorrelations(receiptId: string): Promise<number> {
+    if (!receiptId) return 0;
+
+    // Get all products from the receipt
+    const products = await this.pool.query(
+      `SELECT DISTINCT opis as product_name
+       FROM expenses
+       WHERE receipt_id = $1
+         AND opis IS NOT NULL
+         AND opis != ''
+         AND status = 'active'`,
+      [receiptId]
+    );
+
+    if (products.rows.length < 2) {
+      return 0; // Need at least 2 products for correlation
+    }
+
+    const productNames = products.rows.map((r) => r.product_name.toLowerCase().trim());
+    let updatedCount = 0;
+
+    // Create pairs and update correlations
+    for (let i = 0; i < productNames.length; i++) {
+      for (let j = i + 1; j < productNames.length; j++) {
+        const [productA, productB] = [productNames[i], productNames[j]].sort();
+
+        await this.pool.query(
+          `INSERT INTO product_correlations (product_a, product_b, co_occurrences, last_updated)
+           VALUES ($1, $2, 1, NOW())
+           ON CONFLICT (product_a, product_b)
+           DO UPDATE SET
+             co_occurrences = product_correlations.co_occurrences + 1,
+             last_updated = NOW()`,
+          [productA, productB]
+        );
+        updatedCount++;
+      }
+    }
+
+    return updatedCount;
+  }
+
+  // Get products from correlation table for given items
+  async getCorrelationsFromTable(productNames: string[], limit: number = 10): Promise<Array<{
+    productName: string;
+    coOccurrences: number;
+  }>> {
+    if (productNames.length === 0) {
+      return [];
+    }
+
+    const normalizedNames = productNames.map((n) => n.toLowerCase().trim());
+
+    const result = await this.pool.query(
+      `SELECT
+        CASE
+          WHEN product_a = ANY($1) THEN product_b
+          ELSE product_a
+        END as product_name,
+        co_occurrences
+       FROM product_correlations
+       WHERE product_a = ANY($1) OR product_b = ANY($1)
+       ORDER BY co_occurrences DESC
+       LIMIT $2`,
+      [normalizedNames, limit]
+    );
+
+    return result.rows.map((row) => ({
+      productName: row.product_name,
+      coOccurrences: parseInt(row.co_occurrences, 10),
+    }));
   }
 
   // Execute raw SQL query (for NLP queries)

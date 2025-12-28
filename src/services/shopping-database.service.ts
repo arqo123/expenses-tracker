@@ -263,8 +263,14 @@ export class ShoppingDatabaseService {
     }));
   }
 
-  // Update shopping stats when a product is purchased
-  async updateStatsFromPurchase(productName: string, shopName?: string): Promise<void> {
+  // Update shopping stats when a product is purchased (extended version)
+  async updateStatsFromPurchase(
+    productName: string,
+    shopName?: string,
+    price?: number,
+    category?: string,
+    source: 'shopping_list' | 'receipt' = 'shopping_list'
+  ): Promise<void> {
     const normalized = this.normalizeProductName(productName);
 
     const existing = await this.pool.query(
@@ -293,23 +299,67 @@ export class ShoppingDatabaseService {
         }
       }
 
+      // Calculate new average price
+      let newAvgPrice = price;
+      if (row.avg_price && price) {
+        newAvgPrice = (parseFloat(row.avg_price) * row.purchase_count + price) / (row.purchase_count + 1);
+      }
+
+      // Update shops array
+      const currentShops: string[] = row.shops || [];
+      const updatedShops = shopName && !currentShops.includes(shopName)
+        ? [...currentShops, shopName]
+        : currentShops;
+
       await this.pool.query(
         `UPDATE shopping_stats SET
           purchase_count = purchase_count + 1,
           avg_interval_days = $1,
           last_bought_at = NOW(),
           typical_shop = COALESCE($2, typical_shop),
+          avg_price = COALESCE($3, avg_price),
+          category = COALESCE($4, category),
+          source = COALESCE($5, source),
+          shops = $6,
           updated_at = NOW()
-         WHERE product_name = $3`,
-        [newAvgInterval, shopName, normalized]
+         WHERE product_name = $7`,
+        [newAvgInterval, shopName, newAvgPrice, category, source, updatedShops, normalized]
       );
     } else {
       await this.pool.query(
-        `INSERT INTO shopping_stats (product_name, purchase_count, last_bought_at, typical_shop)
-         VALUES ($1, 1, NOW(), $2)`,
-        [normalized, shopName]
+        `INSERT INTO shopping_stats (product_name, purchase_count, last_bought_at, typical_shop, avg_price, category, source, shops)
+         VALUES ($1, 1, NOW(), $2, $3, $4, $5, $6)`,
+        [normalized, shopName, price, category, source, shopName ? [shopName] : []]
       );
     }
+  }
+
+  // Sync products from a receipt to shopping_stats
+  async syncReceiptToStats(
+    receiptProducts: Array<{ name: string; price: number; shop: string; category?: string }>
+  ): Promise<number> {
+    let synced = 0;
+
+    for (const product of receiptProducts) {
+      if (!product.name || product.name.trim() === '') continue;
+
+      await this.updateStatsFromPurchase(
+        product.name,
+        product.shop,
+        product.price,
+        product.category,
+        'receipt'
+      );
+      synced++;
+    }
+
+    return synced;
+  }
+
+  // Get current shopping list item names (for correlation context)
+  async getCurrentItemNames(): Promise<string[]> {
+    const items = await this.getItems();
+    return items.map((item) => item.name);
   }
 
   // Match receipt products to shopping list items

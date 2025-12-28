@@ -22,11 +22,23 @@ export function mainMenuKeyboard(): InlineKeyboardMarkup {
   return buildKeyboard([
     [{ text: '🛒 Lista zakupow', callback_data: 'list:main' }],
     [{ text: '📅 Raporty czasowe', callback_data: 'menu:time' }],
+    [
+      { text: '📋 Tydzien', callback_data: 'menu:report:week' },
+      { text: '📋 Miesiac', callback_data: 'menu:report:month' },
+      { text: '📋 Rok', callback_data: 'menu:report:year' },
+    ],
     [{ text: '📁 Kategorie', callback_data: 'menu:cat' }],
     [{ text: '🏪 Sklepy', callback_data: 'menu:shop' }],
     [{ text: '👥 Porownanie', callback_data: 'menu:users' }],
     [{ text: '📈 Trendy', callback_data: 'menu:trends' }],
     [{ text: '🔍 Wyszukiwanie', callback_data: 'menu:search' }],
+  ]);
+}
+
+// ==================== REPORTS ====================
+export function reportBackKeyboard(): InlineKeyboardMarkup {
+  return buildKeyboard([
+    [backButton()],
   ]);
 }
 

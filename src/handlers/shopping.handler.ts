@@ -3,12 +3,14 @@ import type { TelegramMessage } from '../types/telegram.types.ts';
 import type { ShoppingItem } from '../types/shopping.types.ts';
 import { ShoppingDatabaseService } from '../services/shopping-database.service.ts';
 import { ShoppingAIService } from '../services/shopping-ai.service.ts';
+import { SuggestionEngineService } from '../services/suggestion-engine.service.ts';
 import {
   shoppingMainKeyboard,
   shoppingListWithItemButtons,
   shoppingListEmptyKeyboard,
   afterAddKeyboard,
   suggestionsKeyboard,
+  smartSuggestionsKeyboard,
 } from '../keyboards/shopping.keyboard.ts';
 import { SHOP_CATEGORY_EMOJI, CATEGORY_ORDER } from '../types/shopping.types.ts';
 import { getUserName } from './webhook.handler.ts';
@@ -214,6 +216,96 @@ export async function showSuggestions(
   }
 
   const keyboard = suggestionsKeyboard(suggestions.slice(0, 8));
+
+  if (messageId) {
+    await telegram.editMessage(chatId, messageId, msg, 'Markdown', keyboard);
+  } else {
+    await telegram.sendMessage({
+      chat_id: chatId,
+      text: msg,
+      parse_mode: 'Markdown',
+      reply_markup: keyboard,
+    });
+  }
+}
+
+// Show smart suggestions (new version with filtering and scoring)
+export async function showSmartSuggestions(
+  c: Context,
+  chatId: number,
+  messageId?: number
+): Promise<void> {
+  const telegram = c.get('telegram');
+  const database = c.get('database');
+
+  const shoppingDb = new ShoppingDatabaseService(database.getPool());
+  const suggestionEngine = new SuggestionEngineService(database.getPool(), database);
+
+  // Get current list items for correlation context
+  const currentItems = await shoppingDb.getCurrentItemNames();
+
+  // Get smart suggestions
+  const suggestions = await suggestionEngine.getSmartSuggestions({
+    currentItems,
+    limit: 10,
+  });
+
+  let msg = '💡 *INTELIGENTNE PODPOWIEDZI*\n\n';
+
+  if (suggestions.length === 0) {
+    msg += '_Brak podpowiedzi._\n\n';
+    msg += '💡 Dodaj produkty do listy lub zeskanuj paragon, a system nauczy się Twoich preferencji.';
+  } else {
+    // Group by reason for nicer display
+    const overdue = suggestions.filter((s) => s.reasons.includes('overdue'));
+    const popular = suggestions.filter(
+      (s) => s.reasons.includes('frequently_bought') && !s.reasons.includes('overdue')
+    );
+    const correlated = suggestions.filter((s) => s.reasons.includes('basket_correlation'));
+
+    if (overdue.length > 0) {
+      msg += '⏰ *Przeterminowane:*\n';
+      for (const s of overdue.slice(0, 3)) {
+        const emoji = s.emoji || '📦';
+        msg += `• ${emoji} ${s.productName}`;
+        if (s.daysOverdue) {
+          msg += ` _(+${s.daysOverdue} dni)_`;
+        }
+        msg += '\n';
+      }
+      msg += '\n';
+    }
+
+    if (popular.length > 0) {
+      msg += '🔥 *Popularne:*\n';
+      for (const s of popular.slice(0, 3)) {
+        const emoji = s.emoji || '📦';
+        msg += `• ${emoji} ${s.productName}`;
+        if (s.purchaseCount && s.purchaseCount > 2) {
+          msg += ` _(${s.purchaseCount}x)_`;
+        }
+        msg += '\n';
+      }
+      msg += '\n';
+    }
+
+    if (correlated.length > 0 && currentItems.length > 0) {
+      msg += '🛒 *Na podstawie listy:*\n';
+      for (const s of correlated.slice(0, 3)) {
+        const emoji = s.emoji || '📦';
+        msg += `• ${emoji} ${s.productName}`;
+        if (s.correlationScore && s.correlationScore > 0.5) {
+          msg += ' 🔗';
+        }
+        msg += '\n';
+      }
+      msg += '\n';
+    }
+
+    msg += '_Użyj filtrów powyżej dla szczegółowych widoków_';
+  }
+
+  const keyboard = smartSuggestionsKeyboard(suggestions, 'all');
 
   if (messageId) {
     await telegram.editMessage(chatId, messageId, msg, 'Markdown', keyboard);

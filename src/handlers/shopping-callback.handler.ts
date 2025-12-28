@@ -1,13 +1,17 @@
 import type { Context } from 'hono';
 import type { TelegramCallbackQuery } from '../types/telegram.types.ts';
+import type { SuggestionFilter } from '../types/suggestion.types.ts';
 import { ShoppingDatabaseService } from '../services/shopping-database.service.ts';
 import { ShoppingAIService } from '../services/shopping-ai.service.ts';
+import { SuggestionEngineService } from '../services/suggestion-engine.service.ts';
 import {
   shoppingMainKeyboard,
   shoppingListEmptyKeyboard,
   confirmClearKeyboard,
+  smartSuggestionsKeyboard,
+  storeFilterKeyboard,
 } from '../keyboards/shopping.keyboard.ts';
-import { showShoppingList, showSuggestions } from './shopping.handler.ts';
+import { showShoppingList, showSmartSuggestions } from './shopping.handler.ts';
 import { getUserName } from './webhook.handler.ts';
 
 export async function shoppingCallbackHandler(
@@ -88,18 +92,38 @@ export async function shoppingCallbackHandler(
           await telegram.answerCallbackQuery(callbackQuery.id, `Dodano: ${productName}`);
           await showShoppingList(c, chatId, messageId);
         } else if (param1 === 'all') {
-          // Add all suggestions
-          const suggestions = await shoppingDb.getSuggestions(8);
-          let addedCount = 0;
+          if (param2 === 'smart') {
+            // Add all smart suggestions
+            const suggestionEngine = new SuggestionEngineService(database.getPool(), database);
+            const currentItems = await shoppingDb.getCurrentItemNames();
+            const suggestions = await suggestionEngine.getSmartSuggestions({
+              currentItems,
+              limit: 8,
+            });
 
-          for (const sugg of suggestions) {
-            const category = await shoppingAI.categorizeProduct(sugg.productName);
-            await shoppingDb.addItem(sugg.productName, 1, userName, category);
-            addedCount++;
+            let addedCount = 0;
+            for (const sugg of suggestions) {
+              const category = await shoppingAI.categorizeProduct(sugg.productName);
+              await shoppingDb.addItem(sugg.productName, 1, userName, category);
+              addedCount++;
+            }
+
+            await telegram.answerCallbackQuery(callbackQuery.id, `Dodano ${addedCount} produktow`);
+            await showShoppingList(c, chatId, messageId);
+          } else {
+            // Add all legacy suggestions
+            const suggestions = await shoppingDb.getSuggestions(8);
+            let addedCount = 0;
+
+            for (const sugg of suggestions) {
+              const category = await shoppingAI.categorizeProduct(sugg.productName);
+              await shoppingDb.addItem(sugg.productName, 1, userName, category);
+              addedCount++;
+            }
+
+            await telegram.answerCallbackQuery(callbackQuery.id, `Dodano ${addedCount} produktow`);
+            await showShoppingList(c, chatId, messageId);
           }
-
-          await telegram.answerCallbackQuery(callbackQuery.id, `Dodano ${addedCount} produktow`);
-          await showShoppingList(c, chatId, messageId);
         }
         break;
       }
@@ -147,10 +171,162 @@ export async function shoppingCallbackHandler(
         break;
       }
 
-      // ==================== SUGGESTIONS ====================
+      // ==================== SUGGESTIONS (legacy) ====================
       case 'suggest': {
-        await showSuggestions(c, chatId, messageId);
+        await showSmartSuggestions(c, chatId, messageId);
         await telegram.answerCallbackQuery(callbackQuery.id);
+        break;
+      }
+
+      // ==================== SMART SUGGESTIONS ====================
+      case 'sugg': {
+        const suggestionEngine = new SuggestionEngineService(database.getPool(), database);
+
+        if (param1 === 'by_store') {
+          // Show store selection keyboard
+          const stores = await suggestionEngine.getTopStores(6);
+          if (stores.length === 0) {
+            await telegram.answerCallbackQuery(
+              callbackQuery.id,
+              'Brak danych o sklepach. Dodaj paragony!'
+            );
+            break;
+          }
+
+          const msg = '🏪 *WYBIERZ SKLEP*\n\nPokazę produkty typowe dla wybranego sklepu:';
+          await telegram.editMessage(chatId, messageId, msg, 'Markdown', storeFilterKeyboard(stores));
+          await telegram.answerCallbackQuery(callbackQuery.id);
+
+        } else if (param1 === 'store') {
+          // Show suggestions for specific store
+          const storeName = decodeURIComponent(param2);
+          const currentItems = await shoppingDb.getCurrentItemNames();
+
+          const suggestions = await suggestionEngine.getSmartSuggestions({
+            currentStore: storeName,
+            currentItems,
+            limit: 10,
+            filter: 'store',
+          });
+
+          let msg = `🏪 *PODPOWIEDZI DLA ${storeName.toUpperCase()}*\n\n`;
+          if (suggestions.length === 0) {
+            msg += '_Brak produktów dla tego sklepu._';
+          } else {
+            msg += 'Produkty które zwykle kupujesz w tym sklepie:\n';
+            for (const s of suggestions.slice(0, 5)) {
+              const emoji = s.emoji || '📦';
+              msg += `• ${emoji} ${s.productName}`;
+              if (s.purchaseCount && s.purchaseCount > 1) {
+                msg += ` _(${s.purchaseCount}x)_`;
+              }
+              msg += '\n';
+            }
+          }
+
+          await telegram.editMessage(
+            chatId,
+            messageId,
+            msg,
+            'Markdown',
+            smartSuggestionsKeyboard(suggestions, 'store')
+          );
+          await telegram.answerCallbackQuery(callbackQuery.id);
+
+        } else if (param1 === 'popular' || param1 === 'overdue' || param1 === 'correlated' || param1 === 'all') {
+          // Show filtered suggestions
+          const filter = param1 as SuggestionFilter;
+          const currentItems = await shoppingDb.getCurrentItemNames();
+
+          const suggestions = await suggestionEngine.getSmartSuggestions({
+            currentItems,
+            limit: 10,
+            filter,
+          });
+
+          let msg = '💡 *INTELIGENTNE PODPOWIEDZI*\n\n';
+
+          if (filter === 'overdue') {
+            msg = '⏰ *PRZETERMINOWANE PRODUKTY*\n\n';
+            if (suggestions.length === 0) {
+              msg += '_Brak przeterminowanych produktów!_';
+            } else {
+              msg += 'Produkty które dawno nie były kupowane:\n';
+              for (const s of suggestions.slice(0, 5)) {
+                const emoji = s.emoji || '📦';
+                msg += `• ${emoji} ${s.productName}`;
+                if (s.daysOverdue) {
+                  msg += ` _(opóźnione ${s.daysOverdue} dni)_`;
+                }
+                msg += '\n';
+              }
+            }
+          } else if (filter === 'popular') {
+            msg = '🔥 *POPULARNE PRODUKTY*\n\n';
+            if (suggestions.length === 0) {
+              msg += '_Brak danych o popularnych produktach._';
+            } else {
+              msg += 'Najczęściej kupowane produkty:\n';
+              for (const s of suggestions.slice(0, 5)) {
+                const emoji = s.emoji || '📦';
+                msg += `• ${emoji} ${s.productName}`;
+                if (s.purchaseCount) {
+                  msg += ` _(${s.purchaseCount} zakupów)_`;
+                }
+                msg += '\n';
+              }
+            }
+          } else if (filter === 'correlated') {
+            msg = '🛒 *KUPOWANE RAZEM*\n\n';
+            if (currentItems.length === 0) {
+              msg += '_Dodaj produkty do listy, aby zobaczyć korelacje._';
+            } else if (suggestions.length === 0) {
+              msg += '_Brak korelacji dla aktualnej listy._';
+            } else {
+              msg += `Na podstawie produktów: ${currentItems.slice(0, 3).join(', ')}...\n\n`;
+              for (const s of suggestions.slice(0, 5)) {
+                const emoji = s.emoji || '📦';
+                msg += `• ${emoji} ${s.productName}`;
+                if (s.correlationScore && s.correlationScore > 0.5) {
+                  msg += ' 🔗';
+                }
+                msg += '\n';
+              }
+            }
+          } else {
+            // 'all' filter
+            if (suggestions.length === 0) {
+              msg += '_Brak podpowiedzi. Dodaj produkty lub paragony!_';
+            } else {
+              for (const s of suggestions.slice(0, 5)) {
+                const emoji = s.emoji || '📦';
+                const indicators: string[] = [];
+                if (s.reasons.includes('overdue')) indicators.push('⏰');
+                if (s.reasons.includes('frequently_bought')) indicators.push('🔥');
+                if (s.reasons.includes('basket_correlation')) indicators.push('🔗');
+
+                msg += `• ${emoji} ${s.productName}`;
+                if (indicators.length > 0) {
+                  msg += ` ${indicators.join('')}`;
+                }
+                msg += '\n';
+              }
+              msg += '\n_⏰=przeterminowane 🔥=popularne 🔗=korelacja_';
+            }
+          }
+
+          await telegram.editMessage(
+            chatId,
+            messageId,
+            msg,
+            'Markdown',
+            smartSuggestionsKeyboard(suggestions, filter)
+          );
+          await telegram.answerCallbackQuery(callbackQuery.id);
+
+        } else {
+          await telegram.answerCallbackQuery(callbackQuery.id, 'Nieznana akcja');
+        }
         break;
       }
 

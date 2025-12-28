@@ -213,6 +213,31 @@ export async function imageHandler(c: Context, message: TelegramMessage): Promis
       // Continue without auto-check on error
     }
 
+    // ===== SYNC: Update shopping stats and product correlations =====
+    try {
+      const shoppingDb = new ShoppingDatabaseService(database.getPool());
+
+      // Sync products to shopping_stats for future suggestions
+      const receiptProducts = validProducts.map(p => ({
+        name: p.name,
+        price: p.price,
+        shop: shopName,
+        category: p.category,
+      }));
+      await shoppingDb.syncReceiptToStats(receiptProducts);
+
+      // Update product correlations for basket analysis
+      if (receiptId && validProducts.length >= 2) {
+        await database.updateProductCorrelations(receiptId);
+        console.log(`[ImageHandler] Updated correlations for receipt ${receiptId}`);
+      }
+
+      console.log(`[ImageHandler] Synced ${validProducts.length} products to shopping_stats`);
+    } catch (error) {
+      console.error('[ImageHandler] Shopping stats sync failed:', error);
+      // Continue without sync on error
+    }
+
     // Build response message with products grouped by category
     let text = `📷 Paragon z *${visionResult.source}*\n\n`;
 

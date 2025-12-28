@@ -1,6 +1,7 @@
 import type { InlineKeyboardMarkup } from '../types/telegram.types.ts';
 import type { ShoppingItem, ShoppingSuggestion, ShopCategory } from '../types/shopping.types.ts';
-import { SHOP_CATEGORY_EMOJI } from '../types/shopping.types.ts';
+import type { SmartSuggestion, SuggestionFilter } from '../types/suggestion.types.ts';
+import { SHOP_CATEGORY_EMOJI, getProductEmoji } from '../types/shopping.types.ts';
 
 type InlineButton = { text: string; callback_data: string };
 type InlineRow = InlineButton[];
@@ -189,6 +190,113 @@ export function suggestionsKeyboard(suggestions: ShoppingSuggestion[]): InlineKe
     rows.push([{ text: '➕ Dodaj wszystkie', callback_data: 'list:add:all' }]);
   }
 
+  rows.push([backButton('main')]);
+
+  return buildKeyboard(rows);
+}
+
+// ==================== SMART SUGGESTIONS ====================
+export function smartSuggestionsKeyboard(
+  suggestions: SmartSuggestion[],
+  activeFilter: SuggestionFilter = 'all'
+): InlineKeyboardMarkup {
+  const rows: InlineRow[] = [];
+
+  // Filter buttons row
+  rows.push([
+    {
+      text: activeFilter === 'popular' ? '🔥 Popularne ✓' : '🔥 Popularne',
+      callback_data: 'list:sugg:popular',
+    },
+    {
+      text: activeFilter === 'overdue' ? '⏰ Przeter. ✓' : '⏰ Przeter.',
+      callback_data: 'list:sugg:overdue',
+    },
+  ]);
+  rows.push([
+    {
+      text: activeFilter === 'store' ? '🏪 Wg sklepu ✓' : '🏪 Wg sklepu',
+      callback_data: 'list:sugg:by_store',
+    },
+    {
+      text: activeFilter === 'correlated' ? '🛒 Korelacje ✓' : '🛒 Korelacje',
+      callback_data: 'list:sugg:correlated',
+    },
+  ]);
+
+  // Reset filter if active
+  if (activeFilter !== 'all') {
+    rows.push([{ text: '🔄 Wszystkie', callback_data: 'list:sugg:all' }]);
+  }
+
+  // Suggestion buttons (max 8, 2 per row)
+  for (let i = 0; i < suggestions.length && i < 8; i += 2) {
+    const row: InlineRow = [];
+    for (let j = 0; j < 2 && i + j < suggestions.length; j++) {
+      const sugg = suggestions[i + j];
+      if (!sugg) continue;
+
+      // Build display with indicators
+      const emoji = sugg.emoji || getProductEmoji(sugg.productName, sugg.category) || '📦';
+      const indicators: string[] = [];
+      if (sugg.reasons.includes('overdue')) indicators.push('⏰');
+      if (sugg.reasons.includes('frequently_bought') && sugg.purchaseCount && sugg.purchaseCount >= 5) {
+        indicators.push('🔥');
+      }
+      if (sugg.reasons.includes('basket_correlation')) indicators.push('🔗');
+
+      const indicatorStr = indicators.length > 0 ? ' ' + indicators.join('') : '';
+      const displayName = sugg.productName.length > 10
+        ? sugg.productName.slice(0, 10) + '..'
+        : sugg.productName;
+
+      row.push({
+        text: `${emoji} ${displayName}${indicatorStr}`,
+        callback_data: `list:add:sugg:${encodeURIComponent(sugg.productName).slice(0, 40)}`,
+      });
+    }
+    if (row.length > 0) {
+      rows.push(row);
+    }
+  }
+
+  // Add all button if there are suggestions
+  if (suggestions.length > 0) {
+    rows.push([{ text: '➕ Dodaj wszystkie', callback_data: 'list:add:all:smart' }]);
+  }
+
+  rows.push([backButton('main')]);
+
+  return buildKeyboard(rows);
+}
+
+// Store selection for suggestions
+export function storeFilterKeyboard(
+  stores: Array<{ storeName: string; productCount: number }>
+): InlineKeyboardMarkup {
+  const rows: InlineRow[] = [];
+
+  // Store buttons (2 per row, max 6 stores)
+  for (let i = 0; i < stores.length && i < 6; i += 2) {
+    const row: InlineRow = [];
+    for (let j = 0; j < 2 && i + j < stores.length; j++) {
+      const store = stores[i + j];
+      if (!store) continue;
+      const displayName = store.storeName.length > 12
+        ? store.storeName.slice(0, 12) + '..'
+        : store.storeName;
+
+      row.push({
+        text: `🏪 ${displayName}`,
+        callback_data: `list:sugg:store:${encodeURIComponent(store.storeName).slice(0, 30)}`,
+      });
+    }
+    if (row.length > 0) {
+      rows.push(row);
+    }
+  }
+
+  rows.push([{ text: '🔄 Wszystkie sklepy', callback_data: 'list:sugg:all' }]);
   rows.push([backButton('main')]);
 
   return buildKeyboard(rows);

@@ -16,7 +16,10 @@ import {
   trendsMenuKeyboard,
   searchMenuKeyboard,
   periodSelectKeyboard,
+  reportBackKeyboard,
 } from '../keyboards/menu.keyboard.ts';
+import { ReportsService } from '../services/reports.service.ts';
+import type { DatabaseService } from '../services/database.service.ts';
 import {
   formatAmount,
   monthlyTrendChart,
@@ -60,7 +63,7 @@ export async function menuHandler(
     console.log(`[MenuHandler] Action: ${action}, params: ${params.join(':')}`);
 
     // Route to appropriate handler
-    const result = await routeMenuAction(stats, action, params);
+    const result = await routeMenuAction(stats, database, action, params);
 
     // Edit message with new content (ignore "message not modified" error)
     try {
@@ -95,6 +98,7 @@ interface MenuResult {
 
 async function routeMenuAction(
   stats: StatsService,
+  database: DatabaseService,
   action: string,
   params: string[]
 ): Promise<MenuResult> {
@@ -108,6 +112,10 @@ async function routeMenuAction(
 
     case 'back':
       return handleBack(params[0]);
+
+    // ==================== REPORTS ====================
+    case 'report':
+      return handleReportAction(stats, database, params);
 
     // ==================== TIME REPORTS ====================
     case 'time':
@@ -791,5 +799,37 @@ async function handleSearchAction(stats: StatsService, params: string[]): Promis
   return {
     text: '🔍 *WYSZUKIWANIE*\n\nWybierz filtr:',
     keyboard: searchMenuKeyboard(),
+  };
+}
+
+// ==================== REPORTS HANDLERS ====================
+
+async function handleReportAction(
+  stats: StatsService,
+  database: DatabaseService,
+  params: string[]
+): Promise<MenuResult> {
+  const reportType = params[0] || 'week';
+  const reports = new ReportsService(stats, database);
+
+  let text: string;
+
+  switch (reportType) {
+    case 'week':
+      text = await reports.generateWeeklyReport();
+      break;
+    case 'month':
+      text = await reports.generateMonthlyReport();
+      break;
+    case 'year':
+      text = await reports.generateYearlyReport();
+      break;
+    default:
+      text = await reports.generateWeeklyReport();
+  }
+
+  return {
+    text,
+    keyboard: reportBackKeyboard(),
   };
 }
