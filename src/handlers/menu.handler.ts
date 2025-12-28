@@ -324,11 +324,12 @@ async function handleTimeAction(stats: StatsService, params: string[]): Promise<
 async function handleCategoryAction(stats: StatsService, params: string[]): Promise<MenuResult> {
   const action = params[0] || '';
 
-  // Top categories
-  if (action === 'top5' || action === 'top10') {
-    const limit = action === 'top5' ? 5 : 10;
-    const categories = await stats.getCategoryStats('month', limit);
-    const summary = await stats.getSummary('month');
+  // Top categories with period selection
+  if (action === 'top') {
+    const period = (params[1] || 'month') as Period;
+    const categories = await stats.getCategoryStats(period, 10);
+    const summary = await stats.getSummary(period);
+    const range = stats.getDateRange(period);
 
     const chartData = categories.map(c => ({
       emoji: c.emoji,
@@ -340,27 +341,7 @@ async function handleCategoryAction(stats: StatsService, params: string[]): Prom
     const chart = categoryBreakdownChart(chartData, summary.totalAmount);
 
     return {
-      text: `🏆 *Top ${limit} kategorii*\nTen miesiac\n\n\`\`\`\n${chart}\n\`\`\``,
-      keyboard: categoryMenuKeyboard(),
-    };
-  }
-
-  // All categories
-  if (action === 'all') {
-    const categories = await stats.getCategoryStats('month');
-    const summary = await stats.getSummary('month');
-
-    const chartData = categories.map(c => ({
-      emoji: c.emoji,
-      category: c.category,
-      amount: c.amount,
-      percentage: c.percentage,
-    }));
-
-    const chart = categoryBreakdownChart(chartData, summary.totalAmount);
-
-    return {
-      text: `📊 *Wszystkie kategorie*\nTen miesiac\n\n\`\`\`\n${chart}\n\`\`\``,
+      text: `🏆 *Top 10 kategorii*\n${range.label}\n\n\`\`\`\n${chart}\n\`\`\``,
       keyboard: categoryMenuKeyboard(),
     };
   }
@@ -493,15 +474,16 @@ async function handleCategoryAction(stats: StatsService, params: string[]): Prom
 async function handleShopAction(stats: StatsService, params: string[]): Promise<MenuResult> {
   const action = params[0] || '';
 
-  // Top shops
-  if (action === 'top5' || action === 'top10' || action === 'top20') {
-    const limit = action === 'top5' ? 5 : action === 'top10' ? 10 : 20;
-    const shops = await stats.getShopStats('month', limit);
+  // Top shops with period selection
+  if (action === 'top') {
+    const period = (params[1] || 'month') as Period;
+    const shops = await stats.getShopStats(period, 10);
+    const range = stats.getDateRange(period);
 
     const chart = shopRankingChart(shops);
 
     return {
-      text: `🏆 *Top ${limit} sklepow*\nTen miesiac\n\n\`\`\`\n${chart}\n\`\`\``,
+      text: `🏆 *Top 10 sklepow*\n${range.label}\n\n\`\`\`\n${chart}\n\`\`\``,
       keyboard: shopMenuKeyboard(),
     };
   }
@@ -681,9 +663,11 @@ async function handleTrendsAction(stats: StatsService, params: string[]): Promis
     };
   }
 
-  // Daily average
+  // Daily average with period selection
   if (action === 'daily') {
-    const dailyData = await stats.getDailyAverage('month');
+    const period = (params[1] || 'month') as Period;
+    const dailyData = await stats.getDailyAverage(period);
+    const range = stats.getDateRange(period);
 
     const display = dailyAverageDisplay(
       dailyData.avgDaily,
@@ -692,14 +676,16 @@ async function handleTrendsAction(stats: StatsService, params: string[]): Promis
     );
 
     return {
-      text: `\`\`\`\n${display}\n\`\`\``,
+      text: `🎯 *SREDNIA DZIENNA*\n${range.label}\n\n\`\`\`\n${display}\n\`\`\``,
       keyboard: trendsMenuKeyboard(),
     };
   }
 
-  // Weekday stats
+  // Weekday stats with period selection
   if (action === 'weekday') {
-    const weekdayData = await stats.getWeekdayStats('month');
+    const period = (params[1] || 'month') as Period;
+    const weekdayData = await stats.getWeekdayStats(period);
+    const range = stats.getDateRange(period);
 
     const chartData = weekdayData.map(w => ({
       label: w.label,
@@ -709,7 +695,7 @@ async function handleTrendsAction(stats: StatsService, params: string[]): Promis
     const chart = weekdayChart(chartData);
 
     return {
-      text: `📆 *KIEDY WYDAJESZ NAJWIECEJ?*\nTen miesiac\n\n\`\`\`\n${chart}\n\`\`\``,
+      text: `📆 *KIEDY WYDAJESZ NAJWIECEJ?*\n${range.label}\n\n\`\`\`\n${chart}\n\`\`\``,
       keyboard: trendsMenuKeyboard(),
     };
   }
@@ -725,10 +711,12 @@ async function handleTrendsAction(stats: StatsService, params: string[]): Promis
 async function handleSearchAction(stats: StatsService, params: string[]): Promise<MenuResult> {
   const action = params[0] || '';
 
-  // Above amount
+  // Above amount with period selection
   if (action === 'above') {
     const amount = parseFloat(params[1] || '100');
-    const expenses = await stats.getExpensesAbove(amount, 'month');
+    const period = (params[2] || 'month') as Period;
+    const expenses = await stats.getExpensesAbove(amount, period);
+    const range = stats.getDateRange(period);
 
     const listData = expenses.slice(0, 20).map(t => ({
       date: t.data,
@@ -741,7 +729,7 @@ async function handleSearchAction(stats: StatsService, params: string[]): Promis
     const list = transactionList(listData, 20);
 
     return {
-      text: `💰 *Wydatki powyzej ${amount} zl*\nTen miesiac (${expenses.length} znalezionych)\n\n\`\`\`\n${list}\n\`\`\``,
+      text: `💰 *Wydatki powyzej ${amount} zl*\n${range.label} (${expenses.length} znalezionych)\n\n\`\`\`\n${list}\n\`\`\``,
       keyboard: searchMenuKeyboard(),
     };
   }

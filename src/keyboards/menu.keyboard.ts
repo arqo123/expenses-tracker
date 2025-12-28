@@ -66,9 +66,9 @@ export function timeDetailsKeyboard(period: string): InlineKeyboardMarkup {
 // ==================== CATEGORIES ====================
 export function categoryMenuKeyboard(): InlineKeyboardMarkup {
   return buildKeyboard([
-    [{ text: '🏆 Top 5 kategorii', callback_data: 'menu:cat:top5' }],
-    [{ text: '🏆 Top 10 kategorii', callback_data: 'menu:cat:top10' }],
-    [{ text: '📊 Wszystkie kategorie', callback_data: 'menu:cat:all' }],
+    [{ text: '📆 Top 10 - Ten miesiac', callback_data: 'menu:cat:top:month' }],
+    [{ text: '📆 Top 10 - Ten rok', callback_data: 'menu:cat:top:year' }],
+    [{ text: '📆 Top 10 - Od poczatku', callback_data: 'menu:cat:top:all' }],
     [{ text: '🔎 Wybierz kategorie...', callback_data: 'menu:cat:select:0' }],
     [backButton()],
   ]);
@@ -126,9 +126,9 @@ export function categoryViewKeyboard(category: string, period: string = 'month')
 // ==================== SHOPS ====================
 export function shopMenuKeyboard(): InlineKeyboardMarkup {
   return buildKeyboard([
-    [{ text: '🏆 Top 5 sklepow', callback_data: 'menu:shop:top5' }],
-    [{ text: '🏆 Top 10 sklepow', callback_data: 'menu:shop:top10' }],
-    [{ text: '🏆 Top 20 sklepow', callback_data: 'menu:shop:top20' }],
+    [{ text: '📆 Top 10 - Ten miesiac', callback_data: 'menu:shop:top:month' }],
+    [{ text: '📆 Top 10 - Ten rok', callback_data: 'menu:shop:top:year' }],
+    [{ text: '📆 Top 10 - Od poczatku', callback_data: 'menu:shop:top:all' }],
     [backButton()],
   ]);
 }
@@ -174,8 +174,10 @@ export function trendsMenuKeyboard(): InlineKeyboardMarkup {
   return buildKeyboard([
     [{ text: '📉 Trend wydatkow (6 mies.)', callback_data: 'menu:trends:6m' }],
     [{ text: '📊 Porownanie miesiecy', callback_data: 'menu:trends:months' }],
-    [{ text: '🎯 Srednie dzienne', callback_data: 'menu:trends:daily' }],
-    [{ text: '📆 Wydatki wg dnia tygodnia', callback_data: 'menu:trends:weekday' }],
+    [{ text: '🎯 Srednia dzienna - Miesiac', callback_data: 'menu:trends:daily:month' }],
+    [{ text: '🎯 Srednia dzienna - Rok', callback_data: 'menu:trends:daily:year' }],
+    [{ text: '📆 Dzien tygodnia - Miesiac', callback_data: 'menu:trends:weekday:month' }],
+    [{ text: '📆 Dzien tygodnia - Rok', callback_data: 'menu:trends:weekday:year' }],
     [backButton()],
   ]);
 }
@@ -183,8 +185,10 @@ export function trendsMenuKeyboard(): InlineKeyboardMarkup {
 // ==================== SEARCH ====================
 export function searchMenuKeyboard(): InlineKeyboardMarkup {
   return buildKeyboard([
-    [{ text: '💰 Powyzej 100 zl', callback_data: 'menu:search:above:100' }],
-    [{ text: '💰 Powyzej 500 zl', callback_data: 'menu:search:above:500' }],
+    [{ text: '💰 Powyzej 100 zl - Miesiac', callback_data: 'menu:search:above:100:month' }],
+    [{ text: '💰 Powyzej 100 zl - Rok', callback_data: 'menu:search:above:100:year' }],
+    [{ text: '💰 Powyzej 500 zl - Miesiac', callback_data: 'menu:search:above:500:month' }],
+    [{ text: '💰 Powyzej 500 zl - Rok', callback_data: 'menu:search:above:500:year' }],
     [{ text: '📊 Ostatnie 10 wydatkow', callback_data: 'menu:search:last:10' }],
     [{ text: '📊 Ostatnie 20 wydatkow', callback_data: 'menu:search:last:20' }],
     [{ text: '📊 Ostatnie 50 wydatkow', callback_data: 'menu:search:last:50' }],

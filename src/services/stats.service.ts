@@ -3,7 +3,7 @@ import type { Expense, ExpenseCategory, ExpenseOrGroup } from '../types/expense.
 import { CATEGORY_EMOJI } from '../types/expense.types.ts';
 
 // Period type for queries
-export type Period = 'today' | 'yesterday' | 'week' | 'lastweek' | 'month' | 'lastmonth' | 'year' | '30days';
+export type Period = 'today' | 'yesterday' | 'week' | 'lastweek' | 'month' | 'lastmonth' | 'year' | '30days' | 'all';
 
 // Period date range
 export interface DateRange {
@@ -140,6 +140,14 @@ export class StatsService {
           start: thirtyDaysAgo.toISOString().slice(0, 10),
           end: today,
           label: 'Ostatnie 30 dni',
+        };
+      }
+
+      case 'all': {
+        return {
+          start: '2000-01-01',
+          end: today,
+          label: 'Od poczatku',
         };
       }
 
@@ -549,7 +557,7 @@ export class StatsService {
     const nastka = await this.database.getRecentExpenses('Nastka', limit);
 
     return [...arek, ...nastka]
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
       .slice(0, limit);
   }
 
@@ -559,7 +567,7 @@ export class StatsService {
     const nastka = await this.database.getRecentExpensesGrouped('Nastka', limit);
 
     return [...arek, ...nastka]
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
       .slice(0, limit);
   }
 

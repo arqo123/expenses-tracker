@@ -254,7 +254,7 @@ export class DatabaseService {
     const query = `
       SELECT * FROM expenses
       WHERE user_name = $1 AND status = 'active'
-      ORDER BY created_at DESC
+      ORDER BY data DESC
       LIMIT $2
     `;
     const result = await this.pool.query(query, [userName, limit]);
@@ -295,7 +295,7 @@ export class DatabaseService {
           AND receipt_id IS NULL
       )
       SELECT * FROM grouped
-      ORDER BY created_at DESC
+      ORDER BY data DESC
       LIMIT $2
     `;
     const result = await this.pool.query(query, [userName, limit]);
