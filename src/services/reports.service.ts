@@ -21,36 +21,36 @@ export class ReportsService {
   // ==================== WEEKLY REPORT ====================
 
   async generateWeeklyReport(): Promise<string> {
-    // Get date range for last complete week (Monday-Sunday)
+    // Get date range for current week (Monday-Sunday)
     const now = new Date();
     const dayOfWeek = now.getDay() || 7; // Monday = 1, Sunday = 7
 
-    // Last Sunday
-    const lastSunday = new Date(now);
-    lastSunday.setDate(now.getDate() - dayOfWeek);
+    // This week's Monday
+    const thisMonday = new Date(now);
+    thisMonday.setDate(now.getDate() - dayOfWeek + 1);
 
-    // Last Monday
-    const lastMonday = new Date(lastSunday);
-    lastMonday.setDate(lastSunday.getDate() - 6);
+    // This week's Sunday
+    const thisSunday = new Date(thisMonday);
+    thisSunday.setDate(thisMonday.getDate() + 6);
 
     // Format date range for display
-    const startDay = lastMonday.getDate();
-    const endDay = lastSunday.getDate();
-    const startMonth = MONTH_NAMES[lastMonday.getMonth()];
-    const endMonth = MONTH_NAMES[lastSunday.getMonth()];
+    const startDay = thisMonday.getDate();
+    const endDay = thisSunday.getDate();
+    const startMonth = MONTH_NAMES[thisMonday.getMonth()];
+    const endMonth = MONTH_NAMES[thisSunday.getMonth()];
     const dateRange = startMonth === endMonth
       ? `${startDay}-${endDay} ${startMonth}`
       : `${startDay} ${startMonth} - ${endDay} ${endMonth}`;
 
     // Get statistics
-    const summary = await this.stats.getSummary('lastweek');
-    const previousComparison = await this.stats.getPeriodComparison('lastweek');
-    const categories = await this.stats.getCategoryStats('lastweek', 3);
-    const users = await this.stats.getUserComparison('lastweek');
+    const summary = await this.stats.getSummary('week');
+    const previousComparison = await this.stats.getPeriodComparison('week');
+    const categories = await this.stats.getCategoryStats('week', 3);
+    const users = await this.stats.getUserComparison('week');
 
     // Build report
     let report = `📊 *RAPORT TYGODNIOWY*\n`;
-    report += `📅 ${dateRange} ${lastSunday.getFullYear()}\n\n`;
+    report += `📅 ${dateRange} ${thisSunday.getFullYear()}\n\n`;
 
     // Summary
     report += `💰 *Suma:* ${formatAmount(summary.totalAmount)} zl\n`;
