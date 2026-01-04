@@ -87,9 +87,13 @@ export async function shoppingCallbackHandler(
           // Add from suggestion
           const productName = decodeURIComponent(param2);
           const category = await shoppingAI.categorizeProduct(productName);
-          await shoppingDb.addItem(productName, 1, userName, category);
+          const result = await shoppingDb.addItem(productName, 1, userName, category);
 
-          await telegram.answerCallbackQuery(callbackQuery.id, `Dodano: ${productName}`);
+          if (result.action === 'duplicate') {
+            await telegram.answerCallbackQuery(callbackQuery.id, `${productName} juz jest na liscie`);
+          } else {
+            await telegram.answerCallbackQuery(callbackQuery.id, `Dodano: ${productName}`);
+          }
           await showShoppingList(c, chatId, messageId);
         } else if (param1 === 'all') {
           if (param2 === 'smart') {
@@ -102,26 +106,42 @@ export async function shoppingCallbackHandler(
             });
 
             let addedCount = 0;
+            let skippedCount = 0;
             for (const sugg of suggestions) {
               const category = await shoppingAI.categorizeProduct(sugg.productName);
-              await shoppingDb.addItem(sugg.productName, 1, userName, category);
-              addedCount++;
+              const result = await shoppingDb.addItem(sugg.productName, 1, userName, category);
+              if (result.action === 'added') {
+                addedCount++;
+              } else {
+                skippedCount++;
+              }
             }
 
-            await telegram.answerCallbackQuery(callbackQuery.id, `Dodano ${addedCount} produktow`);
+            const msg = skippedCount > 0
+              ? `Dodano ${addedCount}, pomieto ${skippedCount} (duplikaty)`
+              : `Dodano ${addedCount} produktow`;
+            await telegram.answerCallbackQuery(callbackQuery.id, msg);
             await showShoppingList(c, chatId, messageId);
           } else {
             // Add all legacy suggestions
             const suggestions = await shoppingDb.getSuggestions(8);
             let addedCount = 0;
+            let skippedCount = 0;
 
             for (const sugg of suggestions) {
               const category = await shoppingAI.categorizeProduct(sugg.productName);
-              await shoppingDb.addItem(sugg.productName, 1, userName, category);
-              addedCount++;
+              const result = await shoppingDb.addItem(sugg.productName, 1, userName, category);
+              if (result.action === 'added') {
+                addedCount++;
+              } else {
+                skippedCount++;
+              }
             }
 
-            await telegram.answerCallbackQuery(callbackQuery.id, `Dodano ${addedCount} produktow`);
+            const msg = skippedCount > 0
+              ? `Dodano ${addedCount}, pomieto ${skippedCount} (duplikaty)`
+              : `Dodano ${addedCount} produktow`;
+            await telegram.answerCallbackQuery(callbackQuery.id, msg);
             await showShoppingList(c, chatId, messageId);
           }
         }

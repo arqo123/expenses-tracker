@@ -48,21 +48,48 @@ export class ShoppingDatabaseService {
     return this.mapToShoppingList(result.rows[0]);
   }
 
-  // Add item to the shopping list
+  // Add item to the shopping list (with duplicate detection)
   async addItem(
     name: string,
     quantity: number,
     addedBy: string,
     shopCategory?: ShopCategory
-  ): Promise<ShoppingItem> {
+  ): Promise<{ item: ShoppingItem; action: 'added' | 'updated' | 'duplicate' }> {
     const list = await this.getOrCreateActiveList(addedBy);
-    const itemId = this.generateItemId();
 
-    // Determine category if not provided
+    // Check if product already exists (compare normalized names)
+    const normalizedName = this.normalizeProductName(name);
+    const existingItems = await this.getItems();
+    const existingItem = existingItems.find(
+      (item) => this.normalizeProductName(item.name) === normalizedName
+    );
+
+    if (existingItem) {
+      if (quantity === 1) {
+        // No explicit quantity - reject duplicate
+        return { item: existingItem, action: 'duplicate' };
+      } else {
+        // Explicit quantity - update
+        await this.pool.query(
+          `UPDATE shopping_items SET quantity = $1, updated_at = NOW() WHERE item_id = $2`,
+          [quantity, existingItem.itemId]
+        );
+        // Update list timestamp
+        await this.pool.query(
+          `UPDATE shopping_lists SET updated_at = NOW() WHERE list_id = $1`,
+          [list.listId]
+        );
+        return {
+          item: { ...existingItem, quantity },
+          action: 'updated',
+        };
+      }
+    }
+
+    // Add new product
+    const itemId = this.generateItemId();
     const category = shopCategory || this.detectCategory(name);
     const priority = CATEGORY_ORDER[category] || 99;
-
-    // Get product-specific emoji
     const emoji = getProductEmoji(name, category);
 
     const result = await this.pool.query(
@@ -78,18 +105,18 @@ export class ShoppingDatabaseService {
       [list.listId]
     );
 
-    return this.mapToShoppingItem(result.rows[0]);
+    return { item: this.mapToShoppingItem(result.rows[0]), action: 'added' };
   }
 
   // Add multiple items at once
   async addItems(
     items: Array<{ name: string; quantity: number }>,
     addedBy: string
-  ): Promise<ShoppingItem[]> {
-    const results: ShoppingItem[] = [];
+  ): Promise<Array<{ item: ShoppingItem; action: 'added' | 'updated' | 'duplicate' }>> {
+    const results: Array<{ item: ShoppingItem; action: 'added' | 'updated' | 'duplicate' }> = [];
     for (const item of items) {
-      const added = await this.addItem(item.name, item.quantity, addedBy);
-      results.push(added);
+      const result = await this.addItem(item.name, item.quantity, addedBy);
+      results.push(result);
     }
     return results;
   }

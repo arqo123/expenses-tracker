@@ -31,25 +31,51 @@ export async function shoppingAddHandler(
 
   try {
     const addedItems: ShoppingItem[] = [];
+    const updatedItems: ShoppingItem[] = [];
+    const duplicateItems: ShoppingItem[] = [];
 
     for (const item of items) {
       // Categorize the product
       const category = await shoppingAI.categorizeProduct(item.name);
 
-      // Add to list
-      const added = await shoppingDb.addItem(item.name, item.quantity, userName, category);
-      addedItems.push(added);
+      // Add to list (with duplicate detection)
+      const result = await shoppingDb.addItem(item.name, item.quantity, userName, category);
+
+      if (result.action === 'added') {
+        addedItems.push(result.item);
+      } else if (result.action === 'updated') {
+        updatedItems.push(result.item);
+      } else {
+        duplicateItems.push(result.item);
+      }
     }
 
     // Build confirmation message
-    const itemsList = addedItems
-      .map((item) => {
-        const qty = item.quantity > 1 ? ` x${item.quantity}` : '';
-        return `• ${item.name}${qty}`;
-      })
-      .join('\n');
+    const parts: string[] = [];
 
-    const msg = `✅ *Dodano do listy:*\n${itemsList}`;
+    if (addedItems.length > 0) {
+      const itemsList = addedItems
+        .map((item) => {
+          const qty = item.quantity > 1 ? ` x${item.quantity}` : '';
+          return `• ${item.name}${qty}`;
+        })
+        .join('\n');
+      parts.push(`✅ *Dodano:*\n${itemsList}`);
+    }
+
+    if (updatedItems.length > 0) {
+      const itemsList = updatedItems
+        .map((item) => `• ${item.name} (ilosc: ${item.quantity})`)
+        .join('\n');
+      parts.push(`🔄 *Zaktualizowano:*\n${itemsList}`);
+    }
+
+    if (duplicateItems.length > 0) {
+      const itemsList = duplicateItems.map((item) => `• ${item.name}`).join('\n');
+      parts.push(`ℹ️ *Juz na liscie:*\n${itemsList}`);
+    }
+
+    const msg = parts.join('\n\n');
 
     await telegram.sendMessage({
       chat_id: chatId,
