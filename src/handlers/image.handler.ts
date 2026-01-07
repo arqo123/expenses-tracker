@@ -138,7 +138,7 @@ export async function imageHandler(c: Context, message: TelegramMessage): Promis
     const receiptId = crypto.randomUUID();
 
     // Create expense inputs (not saved yet - may need user decision)
-    const expenseInputs = validProducts.map(product => ({
+    const expenseInputs = validProducts.map((product, index) => ({
       amount: product.price,
       category: product.category || 'Inne' as const,
       shop: visionResult.source || 'Unknown',
@@ -147,6 +147,7 @@ export async function imageHandler(c: Context, message: TelegramMessage): Promis
       description: product.name,
       raw_input: `[OCR] ${product.name} ${product.price}`,
       receipt_id: receiptId,
+      item_index: index, // Differentiates identical products on same receipt
     }));
 
     // Calculate total and group by category first (needed for both paths)

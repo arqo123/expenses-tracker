@@ -613,6 +613,10 @@ export class DatabaseService {
       // Include description to avoid collisions for multiple products with same price
       (expense.description || '').toLowerCase().replace(/\s+/g, '_').slice(0, 50),
     ];
+    // Include item_index to differentiate identical products on the same receipt
+    if (expense.item_index !== undefined) {
+      parts.push(expense.item_index.toString());
+    }
     return parts.join('_');
   }
 

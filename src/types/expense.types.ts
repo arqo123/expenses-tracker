@@ -64,6 +64,7 @@ export interface CreateExpenseInput {
   raw_input?: string;
   currency?: string;
   receipt_id?: string;
+  item_index?: number; // Differentiates identical items on the same receipt
 }
 
 // Grouped receipt for statistics display

@@ -195,6 +195,21 @@ export class StatsService {
     return [...arekExpenses, ...nastkaExpenses];
   }
 
+  // Count unique transactions (group by receipt_id for multi-item receipts)
+  private countTransactions(expenses: Expense[]): number {
+    const receiptIds = new Set<string>();
+    let singleItemCount = 0;
+
+    for (const expense of expenses) {
+      if (expense.receipt_id) {
+        receiptIds.add(expense.receipt_id);
+      } else {
+        singleItemCount++;
+      }
+    }
+    return receiptIds.size + singleItemCount;
+  }
+
   // ==================== SUMMARY ====================
 
   async getSummary(period: Period): Promise<SummaryStats> {
@@ -202,7 +217,7 @@ export class StatsService {
     const expenses = await this.getAllExpenses(range.start, range.end);
 
     const totalAmount = expenses.reduce((sum, e) => sum + e.kwota, 0);
-    const totalCount = expenses.length;
+    const totalCount = this.countTransactions(expenses);
 
     // Calculate days in period
     const startDate = new Date(range.start);
@@ -222,15 +237,19 @@ export class StatsService {
   async getCategoryStats(period: Period, limit?: number): Promise<CategoryStats[]> {
     const expenses = await this.getExpenses(period);
 
-    // Group by category
-    const byCategory = new Map<string, { amount: number; count: number }>();
+    // Group by category (track receipt_ids to count transactions, not items)
+    const byCategory = new Map<string, { amount: number; singleCount: number; receiptIds: Set<string> }>();
     let total = 0;
 
     for (const expense of expenses) {
       const cat = expense.kategoria;
-      const existing = byCategory.get(cat) || { amount: 0, count: 0 };
+      const existing = byCategory.get(cat) || { amount: 0, singleCount: 0, receiptIds: new Set() };
       existing.amount += expense.kwota;
-      existing.count += 1;
+      if (expense.receipt_id) {
+        existing.receiptIds.add(expense.receipt_id);
+      } else {
+        existing.singleCount += 1;
+      }
       byCategory.set(cat, existing);
       total += expense.kwota;
     }
@@ -242,7 +261,7 @@ export class StatsService {
         category: category as ExpenseCategory,
         emoji: CATEGORY_EMOJI[category as ExpenseCategory] || '❓',
         amount: data.amount,
-        count: data.count,
+        count: data.singleCount + data.receiptIds.size,
         percentage: total > 0 ? (data.amount / total) * 100 : 0,
       });
     }
@@ -261,30 +280,35 @@ export class StatsService {
     const expenses = await this.getAllExpenses(range.start, range.end, category);
 
     const totalAmount = expenses.reduce((sum, e) => sum + e.kwota, 0);
-    const totalCount = expenses.length;
+    const totalCount = this.countTransactions(expenses);
 
     // Days in period
     const startDate = new Date(range.start);
     const endDate = new Date(range.end);
     const days = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 
-    // Top shops in category
-    const shopMap = new Map<string, { amount: number; count: number }>();
+    // Top shops in category (group by receipt_id for transaction count)
+    const shopMap = new Map<string, { amount: number; singleCount: number; receiptIds: Set<string> }>();
     for (const expense of expenses) {
       const shop = expense.sprzedawca || 'Nieznany';
-      const existing = shopMap.get(shop) || { amount: 0, count: 0 };
+      const existing = shopMap.get(shop) || { amount: 0, singleCount: 0, receiptIds: new Set() };
       existing.amount += expense.kwota;
-      existing.count += 1;
+      if (expense.receipt_id) {
+        existing.receiptIds.add(expense.receipt_id);
+      } else {
+        existing.singleCount += 1;
+      }
       shopMap.set(shop, existing);
     }
 
     const topShops: ShopStats[] = [];
     for (const [shop, data] of shopMap) {
+      const count = data.singleCount + data.receiptIds.size;
       topShops.push({
         shop,
         amount: data.amount,
-        count: data.count,
-        avgAmount: data.count > 0 ? data.amount / data.count : 0,
+        count,
+        avgAmount: count > 0 ? data.amount / count : 0,
       });
     }
     topShops.sort((a, b) => b.amount - a.amount);
@@ -312,25 +336,30 @@ export class StatsService {
   async getShopStats(period: Period, limit: number = 10): Promise<ShopStats[]> {
     const expenses = await this.getExpenses(period);
 
-    // Group by shop
-    const byShop = new Map<string, { amount: number; count: number }>();
+    // Group by shop (track receipt_ids for transaction count)
+    const byShop = new Map<string, { amount: number; singleCount: number; receiptIds: Set<string> }>();
 
     for (const expense of expenses) {
       const shop = expense.sprzedawca || 'Nieznany';
-      const existing = byShop.get(shop) || { amount: 0, count: 0 };
+      const existing = byShop.get(shop) || { amount: 0, singleCount: 0, receiptIds: new Set() };
       existing.amount += expense.kwota;
-      existing.count += 1;
+      if (expense.receipt_id) {
+        existing.receiptIds.add(expense.receipt_id);
+      } else {
+        existing.singleCount += 1;
+      }
       byShop.set(shop, existing);
     }
 
     // Convert to array and sort
     const stats: ShopStats[] = [];
     for (const [shop, data] of byShop) {
+      const count = data.singleCount + data.receiptIds.size;
       stats.push({
         shop,
         amount: data.amount,
-        count: data.count,
-        avgAmount: data.count > 0 ? data.amount / data.count : 0,
+        count,
+        avgAmount: count > 0 ? data.amount / count : 0,
       });
     }
 
@@ -395,13 +424,13 @@ export class StatsService {
         {
           userName: 'Arek',
           amount: arekTotal,
-          count: arekExpenses.length,
+          count: this.countTransactions(arekExpenses),
           percentage: total > 0 ? (arekTotal / total) * 100 : 0,
         },
         {
           userName: 'Nastka',
           amount: nastkaTotal,
-          count: nastkaExpenses.length,
+          count: this.countTransactions(nastkaExpenses),
           percentage: total > 0 ? (nastkaTotal / total) * 100 : 0,
         },
       ],
@@ -421,14 +450,18 @@ export class StatsService {
     const nastkaExpenses = await this.database.queryExpenses('Nastka', range.start, range.end);
 
     const getCategoryStats = (expenses: Expense[]): CategoryStats[] => {
-      const byCategory = new Map<string, { amount: number; count: number }>();
+      const byCategory = new Map<string, { amount: number; singleCount: number; receiptIds: Set<string> }>();
       let total = 0;
 
       for (const expense of expenses) {
         const cat = expense.kategoria;
-        const existing = byCategory.get(cat) || { amount: 0, count: 0 };
+        const existing = byCategory.get(cat) || { amount: 0, singleCount: 0, receiptIds: new Set() };
         existing.amount += expense.kwota;
-        existing.count += 1;
+        if (expense.receipt_id) {
+          existing.receiptIds.add(expense.receipt_id);
+        } else {
+          existing.singleCount += 1;
+        }
         byCategory.set(cat, existing);
         total += expense.kwota;
       }
@@ -439,7 +472,7 @@ export class StatsService {
           category: category as ExpenseCategory,
           emoji: CATEGORY_EMOJI[category as ExpenseCategory] || '❓',
           amount: data.amount,
-          count: data.count,
+          count: data.singleCount + data.receiptIds.size,
           percentage: total > 0 ? (data.amount / total) * 100 : 0,
         });
       }
@@ -477,7 +510,7 @@ export class StatsService {
         month: firstDay.toISOString().slice(0, 10).slice(0, 7),
         label: `${monthNames[date.getMonth()]} ${date.getFullYear()}`,
         amount: expenses.reduce((sum, e) => sum + e.kwota, 0),
-        count: expenses.length,
+        count: this.countTransactions(expenses),
       });
     }
 
@@ -488,24 +521,37 @@ export class StatsService {
     const expenses = await this.getExpenses(period);
     const weekdays = ['Nie', 'Pon', 'Wto', 'Sro', 'Czw', 'Pia', 'Sob'];
 
-    // Initialize stats for each day
-    const stats: WeekdayStats[] = weekdays.map((label, day) => ({
+    // Initialize stats for each day (track receipt_ids for transaction count)
+    const statsWithReceipts = weekdays.map((label, day) => ({
       day,
       label,
       amount: 0,
-      count: 0,
+      singleCount: 0,
+      receiptIds: new Set<string>(),
     }));
 
     // Aggregate by weekday
     for (const expense of expenses) {
       const date = new Date(expense.data);
       const dayOfWeek = date.getDay();
-      const dayStat = stats[dayOfWeek];
+      const dayStat = statsWithReceipts[dayOfWeek];
       if (dayStat) {
         dayStat.amount += expense.kwota;
-        dayStat.count += 1;
+        if (expense.receipt_id) {
+          dayStat.receiptIds.add(expense.receipt_id);
+        } else {
+          dayStat.singleCount += 1;
+        }
       }
     }
+
+    // Convert to WeekdayStats
+    const stats: WeekdayStats[] = statsWithReceipts.map(s => ({
+      day: s.day,
+      label: s.label,
+      amount: s.amount,
+      count: s.singleCount + s.receiptIds.size,
+    }));
 
     // Reorder to start from Monday (Monday first, Sunday last)
     const sunday = stats[0];
